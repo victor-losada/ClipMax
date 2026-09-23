@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Panel{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between">
+  <h1 id="titulo">Cargando…</h1>
+  <div class="row">
+    <button id="btnStart" onclick="start()">▶ Iniciar ahora</button>
+    <label class="row" style="margin:0"><input type="checkbox" id="procesar" checked> procesar al detener</label>
+    <button id="btnStop" class="danger" onclick="stop()">■ Detener</button>
+  </div>
+</div>
+
+<div class="grid" style="margin-bottom:12px">
+  <div class="card"><div class="mut small">Estado</div><div class="kpi" id="kEstado">—</div><div class="small mut" id="kEstadoSub"></div></div>
+  <div class="card"><div class="mut small">Claude este mes</div><div class="kpi" id="kGasto">—</div><div class="small mut" id="kModo"></div></div>
+  <div class="card"><div class="mut small">Procesamiento</div><div class="kpi" id="kPipe">—</div><div class="small mut" id="kPipeSub"></div></div>
+</div>
+
+<h2>Streamers</h2>
+<div class="grid" id="streamers"><div class="mut">No hay sesión activa.</div></div>
+
+<div class="two">
+  <div>
+    <h2>Mejores candidatos (en vivo) <a class="small" id="linkSesion" href="#"></a></h2>
+    <div id="momentos" class="mut small">Se calculan cada 5 minutos durante la sesión.</div>
+  </div>
+  <div>
+    <h2>Transcripción en vivo</h2>
+    <div id="tvivo" class="mut small">—</div>
+  </div>
+</div>
+
+<h2>Registro</h2>
+<pre class="log" id="log"></pre>
+
+<script>
+async function refresh() {
+  let s;
+  try { s = await api("/api/estado"); } catch (e) { return; }
+  document.getElementById("titulo").textContent = s.activa ? `Grabando · ${s.fecha}` : "En espera";
+  document.getElementById("btnStart").disabled = s.activa;
+  document.getElementById("btnStop").disabled = !s.activa;
+  document.getElementById("kEstado").textContent = s.activa ? "Grabando" : (s.estado_sesion || "Libre");
+  document.getElementById("kEstadoSub").textContent = s.activa ? `cierre a las ${s.cierre}` :
+      (s.proximo_inicio ? `próximo inicio ${s.proximo_inicio_fecha} ${s.proximo_inicio}` : "programación desactivada");
+  const p = s.presupuesto;
+  document.getElementById("kGasto").textContent = `$${p.gastado.toFixed(2)} / $${p.presupuesto.toFixed(0)}`;
+  document.getElementById("kModo").textContent = `modo ${s.modo_claude}`;
+  document.getElementById("kPipe").textContent = s.procesando ? (s.pipeline.paso || "…") : "Inactivo";
+  document.getElementById("kPipeSub").textContent = s.procesando ? `${s.pipeline.fecha} · ${s.pipeline.detalle || ""}` : "";
+  const link = document.getElementById("linkSesion");
+  link.href = `/sesion/${s.hoy}`; link.textContent = s.hoy ? `ver sesión ${s.hoy} →` : "";
+
+  const box = document.getElementById("streamers");
+  if (s.streamers.length) {
+    box.innerHTML = s.streamers.map(st => {
+      const g = st.grabacion, c = st.chat || {};
+      const ment = (c.menciones_recientes || []).map(m => `<div class="small">→ <b>${esc(m.target)}</b>: ${esc(m.texto)}</div>`).join("");
+      return `<div class="card"><h3>${esc(st.nombre)} <span class="badge ${esc(g.estado)}">${esc(g.estado)}</span></h3>
+        <div class="small mut">${esc(g.titulo || "")}</div>
+        <div class="small">Parte ${g.parte ? g.parte.index : "—"} · ${mb(g.bytes)} · ${g.espectadores || 0} espectadores</div>
+        <div class="small">Chat: <span class="badge ${esc(c.estado)}">${esc(c.estado || "—")}</span> ${c.msgs_min ?? 0} msg/min · ${c.total ?? 0} total</div>
+        ${g.detalle ? `<div class="small" style="color:var(--warn)">${esc(g.detalle)}</div>` : ""}
+        ${ment ? `<div style="margin-top:6px">${ment}</div>` : ""}</div>`;
+    }).join("");
+  } else {
+    box.innerHTML = '<div class="mut">No hay sesión activa.</div>';
+  }
+  const tv = s.transcripcion_vivo;
+  document.getElementById("tvivo").innerHTML = !tv ? "—" : tv.desactivado ? `<span style="color:var(--warn)">${esc(tv.desactivado)}</span>` :
+    Object.entries(tv.por_streamer).map(([k, v]) => `<div><b>${esc(k)}</b> (retraso ${v.retraso_s ?? "—"}s): ${esc(v.ultimo)}</div>`).join("") || "sin objetivos";
+  document.getElementById("momentos").innerHTML = s.momentos.length ? "<table>" + s.momentos.map(m =>
+      `<tr><td>#${m.rank}</td><td>${m.pareja ? '<span class="star">★</span> ' : ""}<b>${esc(m.nombre)}</b><br><span class="mut small">${m.desde}–${m.hasta}</span></td>
+       <td class="small">${esc(m.por_que)}</td><td>${m.score.toFixed(2)}</td></tr>`).join("") + "</table>" : "Aún no hay candidatos.";
+  const log = document.getElementById("log");
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = s.log.join("\n");
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+async function start() { try { const r = await api("/api/sesion/iniciar", {}); toast(`Sesión ${r.fecha} iniciada`); } catch (e) { toast(e.message); } refresh(); }
+async function stop() {
+  if (!confirm("¿Detener la grabación de todos los streamers?")) return;
+  try { await api("/api/sesion/detener", { procesar: document.getElementById("procesar").checked }); toast("Deteniendo…"); } catch (e) { toast(e.message); }
+  refresh();
+}
+refresh(); setInterval(refresh, 3000);
+</script>
+{% endblock %}

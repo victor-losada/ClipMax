@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Sesiones{% endblock %}
+{% block content %}
+<h1>Sesiones</h1>
+<p><a class="btn sec" href="{{ url_for('session_page', fecha=hoy) }}">Sesión de hoy ({{ hoy }})</a>
+  <span class="small mut">Puedes pegar el contexto de X de hoy aunque todavía no haya empezado la grabación.</span></p>
+<div class="card">
+<table>
+  <tr><th>Fecha</th><th>Estado</th><th>Inicio</th><th>Fin</th><th></th></tr>
+  {% for s in sesiones %}
+  <tr><td><a href="{{ url_for('session_page', fecha=s.fecha) }}">{{ s.fecha }}</a></td>
+      <td><span class="badge {{ s.estado }}">{{ s.estado }}</span></td>
+      <td>{{ s.started_at|clock }}</td><td>{{ s.ended_at|clock }}</td>
+      <td><a href="{{ url_for('session_page', fecha=s.fecha) }}">abrir →</a></td></tr>
+  {% else %}
+  <tr><td colspan="5" class="mut">Todavía no hay sesiones.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

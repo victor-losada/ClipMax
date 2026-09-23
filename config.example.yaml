@@ -1,0 +1,159 @@
+# =============================================================================
+# ClipMax · configuración de ejemplo
+# Copia este archivo como config.yaml y ajústalo. Todo lo que no pongas toma el
+# valor por defecto (clipmax/config.py -> DEFAULTS). La interfaz web
+# (http://127.0.0.1:5000/config) edita config.yaml por ti; este archivo queda
+# como referencia comentada.
+# =============================================================================
+
+evento:
+  nombre: "Desafío 4"
+  zona_horaria: "America/Bogota"     # hora de Colombia (UTC-5, sin horario de verano)
+  hora_inicio: "15:00"               # a esta hora arranca la grabación automática
+  duracion_horas: 8                  # el día dura 7-8 horas
+  margen_final_min: 15               # se sigue grabando este margen por si se alarga
+  dias_activos: [lun, mar, mie, jue, vie, sab, dom]
+  programacion_activa: true          # false = solo graba cuando presionas "Iniciar ahora"
+  procesar_al_terminar: true         # al cierre: detectar -> transcribir -> Claude -> video -> reporte
+  # Los dos slugs cuyo chipeo se prioriza por encima de todo (deben coincidir con streamers[].url):
+  pareja_principal: [westcol, gearofnos]
+  # Notas fijas que Claude recibe cada día (rivalidades, reglas, alianzas conocidas):
+  lore_base: |
+    Westcol y Gear of Nos tienen un pique abierto desde el inicio del torneo.
+    (Edita estas notas con lo que sepas del evento; Claude las usa como contexto.)
+
+# -----------------------------------------------------------------------------
+# Streamers. Agrega todos los que quieras (decenas está bien).
+#   url:                 canal de Kick
+#   modo:                juego_cara (stream completo) | cara (solo el recuadro de la cámara)
+#   activo:              false = no se graba ni se lee su chat
+#   prioridad:           multiplica la puntuación de sus momentos (1 = normal)
+#   alias:               cómo lo llaman el chat y los demás streamers (para detectar menciones)
+#   transcribir_en_vivo: whisper escucha su audio durante el directo para detectar menciones
+#                        (usa CPU: actívalo solo en la pareja principal)
+#   camara:              recuadro de la cámara en fracciones 0-1. Defínelo con el mouse en
+#                        la web: Configuración -> Cámara ("definir"). Necesario para modo "cara"
+#                        y para el formato vertical (cámara arriba, juego abajo).
+#   chatroom_id:         opcional; solo si la API de Kick no deja leerlo automáticamente.
+# -----------------------------------------------------------------------------
+streamers:
+  - nombre: "Westcol"
+    url: "https://kick.com/westcol"
+    modo: juego_cara
+    activo: true
+    prioridad: 1.5
+    alias: [west, wescol, güestcol, westcoll]
+    transcribir_en_vivo: true
+    camara: null
+
+  - nombre: "Gear of Nos"
+    # ⚠ REEMPLAZA esta URL: "gearofnos" es un marcador y NO existe en Kick. Abre su canal,
+    #   copia la URL (kick.com/<slug>) y actualiza también evento.pareja_principal.
+    #   `python -m clipmax doctor` te avisa si un canal no existe.
+    url: "https://kick.com/gearofnos"
+    modo: juego_cara
+    activo: true
+    prioridad: 1.5
+    alias: [gear, gear of nos, gearofnos, gir]
+    transcribir_en_vivo: true
+    camara: null
+
+  # Ejemplo de un participante más (desactivado). Copia el bloque por cada streamer.
+  - nombre: "Otro participante"
+    url: "https://kick.com/otro_participante"
+    modo: cara
+    activo: false
+    prioridad: 1.0
+    alias: []
+    transcribir_en_vivo: false
+    camara: null
+
+grabacion:
+  carpeta_datos: "data"       # grabaciones, base de datos, logs y resultados
+  calidad_max: 720            # 1080 | 720 | 480 | 360. 720p ≈ 1.8 GB por hora por streamer
+  resolver: "yt-dlp"          # "yt-dlp" (recomendado) o "api" (playback_url de Kick directo)
+  reintento_s: 45             # cada cuánto se revisa si un streamer ya salió en vivo
+  estancado_s: 90             # si el archivo no crece en este tiempo, se reinicia la conexión
+  borrar_partes_ts: true      # tras crear el MP4 final, borra los .ts intermedios
+  desfase_chat_s: 0           # + si el video va adelantado respecto al chat (calibración fina)
+
+chat:
+  guardar_mensajes: true      # guarda el texto (sirve para darle a Claude el 'sentir' del chat)
+  # Claves públicas de Pusher que usa la web de Kick. Si Kick cambia la suya, agrégala aquí:
+  pusher_keys: ["32cbd69e4b950bf97679", "eb1d5f283081a78b932c"]
+  pusher_cluster: "us2"
+  palabras_hype: [kekw, omegalul, lul, jaja, xd, clip, noo, wtf, humillado, "😂", "💀", "🔥"]
+
+deteccion:
+  bucket_s: 5                 # resolución de la serie del chat
+  ventana_base_min: 10        # el "ritmo normal" del chat se mide sobre los últimos 10 min
+  umbral_z: 3.5               # cuántas desviaciones robustas sobre lo normal para ser pico
+  ratio_min: 1.8              # y al menos 1.8x el ritmo normal
+  mensajes_min_bucket: 4
+  separacion_picos_s: 60
+  sincronia_s: 45             # picos en dos streams con menos de 45 s de diferencia = interacción
+  umbral_menciones_chat: 3
+  pre_s: 50                   # contexto antes de la señal (el chat reacciona tarde)
+  post_s: 25
+  duracion_max_candidato_s: 180
+  candidatos_max: 40          # cuántos candidatos se transcriben y se mandan a Claude
+  pesos: {pico_chat: 1.0, mencion_voz: 2.5, mencion_chat: 0.8, sincronia: 1.2, tema_x: 1.0}
+  multiplicador_pareja: 1.6   # bonus si el momento involucra a Westcol <-> Gear of Nos
+
+transcripcion:
+  whisper_cli: ""             # vacío = busca bin/whisper/**/whisper-cli.exe o el PATH
+  modelo_vivo: "models/ggml-base.bin"      # rápido: escucha menciones en vivo
+  modelo_calidad: "models/ggml-small.bin"  # mejor: candidatos que van a Claude
+  vad_modelo: ""              # opcional: "models/ggml-silero-v5.1.2.bin" (python -m clipmax descargar --vad)
+  idioma: "es"
+  hilos: 4                    # núcleos de CPU para whisper
+  intervalo_vivo_s: 60
+  margen_vivo_s: 20
+  prompt_inicial: "Desafío 4, Minecraft, Kick, Westcol, Gear of Nos, chat, stream."
+
+x:
+  modo: "manual"              # manual ($0: pegas posts en la web) | api (token de X) | claude_web
+  consulta: '("Desafío 4" OR "desafio 4" OR westcol OR gearofnos) -is:retweet'
+  intervalo_min: 60           # modo api
+  max_consultas_dia: 8        # modo api
+  max_caracteres_contexto: 12000
+  busquedas_web_max: 5        # modo claude_web (≈ $0.01 por búsqueda + tokens)
+
+claude:
+  modo: "api"                 # api (automático) | manual (paquete para pegar en claude.ai, $0)
+  modelo: "claude-opus-5"     # "claude-sonnet-5" cuesta ~40 % de Opus; ver docs/ARQUITECTURA.md
+  esfuerzo: "high"            # low | medium | high | xhigh | max
+  max_tokens: 32000
+  presupuesto_mensual_usd: 10 # si una llamada haría pasar este tope, no se llama (se usa el modo manual)
+  fallback_por_rechazo: true
+  max_caracteres_transcripcion: 2500   # por candidato
+  precios:                    # USD por millón de tokens [entrada, salida]
+    claude-opus-5: [5.0, 25.0]
+    claude-sonnet-5: [2.0, 10.0]
+    claude-haiku-4-5: [1.0, 5.0]
+
+edicion:
+  formato: "horizontal"       # horizontal (YouTube) | vertical (TikTok/Shorts, cámara arriba y juego abajo)
+  ancho: 1920
+  alto: 1080
+  fps: 30
+  codec: "libx264"            # h264_nvenc (NVIDIA), h264_qsv (Intel), h264_amf (AMD) aceleran mucho
+  crf: 21
+  preset: "veryfast"
+  duracion_min_min: 10        # el resumen diario debe durar 10-20 minutos
+  duracion_max_min: 20
+  silencio_max_s: 2.5         # huecos sin voz más largos que esto se recortan
+  metodo_silencios: "transcripcion"   # transcripcion | audio | ninguno
+  umbral_silencio_db: -38     # solo para metodo "audio"
+  narracion: "tarjetas"       # tarjetas (texto) | sapi (voz de Windows) | piper (TTS local)
+  piper_exe: "bin/piper/piper.exe"
+  piper_voz: "models/es_MX-claude-high.onnx"
+  voz_sapi: ""                # parte del nombre, p. ej. "Sabina"
+  fuente: ""                  # ruta a un .ttf; vacío = Segoe UI Bold / Arial Bold
+  exportar_clips_tiktok: true # un clip vertical por cada "mejor momento"
+  titulos_en_pantalla: true
+
+web:
+  host: "127.0.0.1"
+  puerto: 5000
+  abrir_navegador: true

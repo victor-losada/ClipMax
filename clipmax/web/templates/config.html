@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Configuración{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between">
+  <h1>Configuración</h1>
+  <div class="row">
+    <a class="btn sec" href="{{ url_for('config_yaml') }}">Editar YAML completo</a>
+    <button onclick="save()">Guardar</button>
+  </div>
+</div>
+
+<div class="two">
+  <div class="card">
+    <h3>Evento y horario</h3>
+    <label>Nombre del evento</label><input id="ev_nombre" style="width:100%">
+    <div class="row">
+      <div><label>Hora de inicio (Colombia)</label><input id="ev_hora" type="time"></div>
+      <div><label>Duración (horas)</label><input id="ev_dur" type="number" step="0.5" min="1" max="24" style="width:90px"></div>
+      <div><label>Margen final (min)</label><input id="ev_margen" type="number" min="0" style="width:90px"></div>
+    </div>
+    <label>Días activos</label>
+    <div class="row" id="ev_dias"></div>
+    <label class="row"><input type="checkbox" id="ev_prog"> Grabar automáticamente según el horario</label>
+    <label class="row"><input type="checkbox" id="ev_proc"> Procesar todo al terminar (detectar, Claude, editar)</label>
+    <label>Pareja principal (su chipeo se prioriza)</label>
+    <div class="row"><select id="ev_p1"></select> ↔ <select id="ev_p2"></select></div>
+    <label>Notas fijas de lore (Claude las recibe cada día)</label>
+    <textarea id="ev_lore" style="min-height:90px" placeholder="Rivalidades, alianzas, reglas del torneo…"></textarea>
+  </div>
+  <div class="card">
+    <h3>Claude</h3>
+    <div class="row">
+      <div><label>Modo</label><select id="cl_modo"><option value="api">API (automático)</option><option value="manual">Manual (pegar en claude.ai)</option></select></div>
+      <div><label>Modelo</label><input id="cl_modelo" list="modelos" style="width:170px">
+        <datalist id="modelos"><option value="claude-opus-5"><option value="claude-sonnet-5"><option value="claude-haiku-4-5"></datalist></div>
+      <div><label>Esfuerzo</label><select id="cl_esf"><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select></div>
+      <div><label>Tope mensual (USD)</label><input id="cl_pres" type="number" step="0.5" min="0" style="width:90px"></div>
+    </div>
+    <p class="small mut">La clave va en el archivo <code>.env</code> (ANTHROPIC_API_KEY). Si una llamada haría pasar el tope, ClipMax no llama y deja listo el paquete para el modo manual.</p>
+    <h3>Contexto de X</h3>
+    <div class="row">
+      <div><label>Modo</label><select id="x_modo"><option value="manual">Manual (pegar posts)</option><option value="api">API de X (token)</option><option value="claude_web">Búsqueda web de Claude</option></select></div>
+    </div>
+    <label>Consulta (modo API)</label><input id="x_consulta" style="width:100%">
+    <h3>Edición</h3>
+    <div class="row">
+      <div><label>Formato</label><select id="ed_formato"><option value="horizontal">Horizontal 16:9</option><option value="vertical">Vertical 9:16</option></select></div>
+      <div><label>Resolución</label><select id="ed_res"><option value="1920x1080">1080p</option><option value="1280x720">720p</option></select></div>
+      <div><label>Narración</label><select id="ed_narr"><option value="tarjetas">Texto en pantalla</option><option value="sapi">Voz de Windows</option><option value="piper">Piper TTS</option></select></div>
+      <div><label>Códec</label><select id="ed_codec"><option value="libx264">CPU (libx264)</option><option value="h264_nvenc">NVIDIA (nvenc)</option><option value="h264_qsv">Intel (qsv)</option><option value="h264_amf">AMD (amf)</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>Duración mín. (min)</label><input id="ed_min" type="number" min="1" style="width:80px"></div>
+      <div><label>Duración máx. (min)</label><input id="ed_max" type="number" min="1" style="width:80px"></div>
+      <div><label>Silencio máx. (s)</label><input id="ed_sil" type="number" step="0.5" min="0.5" style="width:80px"></div>
+    </div>
+    <label class="row"><input type="checkbox" id="ed_tiktok"> Exportar clips verticales para TikTok de los mejores momentos</label>
+    <label>Calidad máxima de grabación</label>
+    <select id="gr_calidad"><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select>
+  </div>
+</div>
+
+<h2>Streamers</h2>
+<div class="card">
+  <table>
+    <thead><tr><th>Activo</th><th>Nombre</th><th>URL de Kick</th><th>Modo</th><th>Prioridad</th><th>Alias (coma)</th><th>Voz en vivo</th><th>Cámara</th><th></th></tr></thead>
+    <tbody id="tbl"></tbody>
+  </table>
+  <div class="row" style="margin-top:10px"><button class="sec" onclick="addRow()">+ Agregar streamer</button>
+    <span class="small mut">"Voz en vivo" transcribe al streamer durante el directo (usa CPU): actívalo solo en la pareja principal.</span></div>
+</div>
+
+<script>
+const CFG = {{ cfg_json|safe }};
+const DIAS = ["lun","mar","mie","jue","vie","sab","dom"];
+const $ = id => document.getElementById(id);
+
+function fill() {
+  const ev = CFG.evento, cl = CFG.claude, ed = CFG.edicion;
+  $("ev_nombre").value = ev.nombre; $("ev_hora").value = ev.hora_inicio; $("ev_dur").value = ev.duracion_horas;
+  $("ev_margen").value = ev.margen_final_min; $("ev_prog").checked = ev.programacion_activa; $("ev_proc").checked = ev.procesar_al_terminar;
+  $("ev_lore").value = ev.lore_base || "";
+  $("ev_dias").innerHTML = DIAS.map(d => `<label class="row" style="margin:0"><input type="checkbox" value="${d}" ${ev.dias_activos.includes(d) ? "checked" : ""}> ${d}</label>`).join("");
+  $("cl_modo").value = cl.modo; $("cl_modelo").value = cl.modelo; $("cl_esf").value = cl.esfuerzo; $("cl_pres").value = cl.presupuesto_mensual_usd;
+  $("x_modo").value = CFG.x.modo; $("x_consulta").value = CFG.x.consulta;
+  $("ed_formato").value = ed.formato; $("ed_narr").value = ed.narracion; $("ed_codec").value = ed.codec;
+  $("ed_res").value = (Math.max(ed.ancho, ed.alto) >= 1920) ? "1920x1080" : "1280x720";
+  $("ed_min").value = ed.duracion_min_min; $("ed_max").value = ed.duracion_max_min; $("ed_sil").value = ed.silencio_max_s;
+  $("ed_tiktok").checked = ed.exportar_clips_tiktok; $("gr_calidad").value = String(CFG.grabacion.calidad_max);
+  CFG.streamers.forEach(s => addRow(s));
+  pairOptions();
+}
+
+function addRow(s) {
+  s = s || { nombre: "", url: "https://kick.com/", modo: "juego_cara", activo: true, prioridad: 1, alias: [], transcribir_en_vivo: false, camara: null, slug: "" };
+  const tr = document.createElement("tr");
+  tr.dataset.extra = JSON.stringify({ camara: s.camara, chatroom_id: s.chatroom_id ?? null });
+  tr.innerHTML = `<td><input type="checkbox" class="f-activo" ${s.activo ? "checked" : ""}></td>
+    <td><input class="f-nombre" value="${esc(s.nombre)}" style="width:130px" onchange="pairOptions()"></td>
+    <td><input class="f-url" value="${esc(s.url)}" style="width:210px" onchange="pairOptions()"></td>
+    <td><select class="f-modo"><option value="juego_cara">juego + cara</option><option value="cara">solo cara</option></select></td>
+    <td><input class="f-prio" type="number" step="0.1" min="0.1" value="${s.prioridad}" style="width:70px"></td>
+    <td><input class="f-alias" value="${esc((s.alias || []).join(", "))}" style="width:180px"></td>
+    <td><input type="checkbox" class="f-vivo" ${s.transcribir_en_vivo ? "checked" : ""}></td>
+    <td>${s.slug ? `<a href="/camara/${esc(s.slug)}">${s.camara ? "✔ ajustar" : "definir"}</a>` : '<span class="mut small">guarda primero</span>'}</td>
+    <td><button class="sec" onclick="this.closest('tr').remove(); pairOptions()">✕</button></td>`;
+  tr.querySelector(".f-modo").value = s.modo;
+  $("tbl").appendChild(tr);
+}
+
+function slugOf(url) { const m = /kick\.com\/([A-Za-z0-9_\-]+)/i.exec(url); return m ? m[1].toLowerCase() : url.trim().toLowerCase(); }
+
+function pairOptions() {
+  const rows = [...$("tbl").querySelectorAll("tr")].map(tr => ({ slug: slugOf(tr.querySelector(".f-url").value), nombre: tr.querySelector(".f-nombre").value }));
+  const pair = CFG.evento.pareja_principal || [];
+  ["ev_p1", "ev_p2"].forEach((id, i) => {
+    const cur = $(id).value || pair[i] || "";
+    $(id).innerHTML = '<option value="">—</option>' + rows.map(r => `<option value="${esc(r.slug)}">${esc(r.nombre || r.slug)}</option>`).join("");
+    $(id).value = cur;
+  });
+}
+
+async function save() {
+  const cfg = structuredClone(CFG);
+  const ev = cfg.evento;
+  ev.nombre = $("ev_nombre").value; ev.hora_inicio = $("ev_hora").value; ev.duracion_horas = parseFloat($("ev_dur").value);
+  ev.margen_final_min = parseFloat($("ev_margen").value); ev.programacion_activa = $("ev_prog").checked; ev.procesar_al_terminar = $("ev_proc").checked;
+  ev.lore_base = $("ev_lore").value;
+  ev.dias_activos = [...$("ev_dias").querySelectorAll("input:checked")].map(i => i.value);
+  ev.pareja_principal = [$("ev_p1").value, $("ev_p2").value].filter(Boolean);
+  Object.assign(cfg.claude, { modo: $("cl_modo").value, modelo: $("cl_modelo").value.trim(), esfuerzo: $("cl_esf").value,
+                              presupuesto_mensual_usd: parseFloat($("cl_pres").value) });
+  Object.assign(cfg.x, { modo: $("x_modo").value, consulta: $("x_consulta").value });
+  const [w, h] = $("ed_res").value.split("x").map(Number);
+  const vertical = $("ed_formato").value === "vertical";
+  Object.assign(cfg.edicion, { formato: $("ed_formato").value, narracion: $("ed_narr").value, codec: $("ed_codec").value,
+    ancho: vertical ? h : w, alto: vertical ? w : h, duracion_min_min: parseFloat($("ed_min").value),
+    duracion_max_min: parseFloat($("ed_max").value), silencio_max_s: parseFloat($("ed_sil").value),
+    exportar_clips_tiktok: $("ed_tiktok").checked });
+  cfg.grabacion.calidad_max = parseInt($("gr_calidad").value);
+  cfg.streamers = [...$("tbl").querySelectorAll("tr")].map(tr => ({
+    ...JSON.parse(tr.dataset.extra || "{}"),
+    activo: tr.querySelector(".f-activo").checked, nombre: tr.querySelector(".f-nombre").value.trim(),
+    url: tr.querySelector(".f-url").value.trim(), modo: tr.querySelector(".f-modo").value,
+    prioridad: parseFloat(tr.querySelector(".f-prio").value || "1"),
+    alias: tr.querySelector(".f-alias").value.split(",").map(a => a.trim()).filter(Boolean),
+    transcribir_en_vivo: tr.querySelector(".f-vivo").checked,
+  })).filter(s => s.url && s.url !== "https://kick.com/");
+  try { const r = await api("/api/config", cfg); toast(r.aviso); setTimeout(() => location.reload(), 900); }
+  catch (e) { toast("Error: " + e.message, 6000); }
+}
+fill();
+</script>
+{% endblock %}

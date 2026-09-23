@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Configuración YAML{% endblock %}
+{% block content %}
+<h1>Configuración completa (YAML)</h1>
+<p class="mut small">Todas las opciones, incluidas las avanzadas de detección y transcripción. La referencia comentada está en <code>config.example.yaml</code>.</p>
+{% if error %}<div class="card" style="border-color:var(--err);color:var(--err)">{{ error }}</div>{% endif %}
+<form method="post">
+  <textarea name="yaml" style="min-height:70vh">{{ yaml_text }}</textarea>
+  <div class="row" style="margin-top:10px"><button type="submit">Guardar</button><a class="btn sec" href="{{ url_for('config_page') }}">Volver</a></div>
+</form>
+{% endblock %}

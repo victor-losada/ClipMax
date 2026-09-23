@@ -1,0 +1,11 @@
+# ClipMax — dependencias de Python (Python 3.10 o superior; recomendado 3.12)
+anthropic>=1.8.0            # SDK oficial de Claude (salidas estructuradas + fallbacks)
+flask>=3.0                  # interfaz web local
+waitress>=3.0               # servidor WSGI estable en Windows
+pyyaml>=6.0                 # config.yaml
+pillow>=10.1                # tarjetas de narración y títulos en pantalla
+websocket-client>=1.8       # chat de Kick (Pusher)
+yt-dlp[default,curl-cffi]   # resolver streams de Kick (instala curl_cffi para pasar Cloudflare)
+tzdata>=2024.1              # zonas horarias en Windows (America/Bogota)
+python-dotenv>=1.0          # leer ANTHROPIC_API_KEY desde .env
+pyttsx3>=2.90; sys_platform == "win32"   # narración opcional con voces SAPI de Windows

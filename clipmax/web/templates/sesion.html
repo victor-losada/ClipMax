@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Sesión {{ fecha }}{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between">
+  <h1>Sesión {{ fecha }} <span class="badge {{ s.estado }}">{{ s.estado }}</span></h1>
+  <div class="row">
+    <button onclick="procesar('finalizar')">Procesar todo</button>
+    {% if files.html %}<a class="btn sec" target="_blank" href="{{ url_for('files', fecha=fecha, rel='resumen_' ~ fecha ~ '.html') }}">Ver resumen</a>{% endif %}
+  </div>
+</div>
+
+<h2>Post-proceso</h2>
+<div class="steps">
+  {% for p in pasos %}{% set e = estado_pasos.get(p, {}) %}
+  <div class="step">
+    <div><b>{{ loop.index }}. {{ p }}</b> <span class="badge {{ e.estado or '' }}">{{ e.estado or 'pendiente' }}</span></div>
+    <div class="small mut" style="max-width:220px">{{ e.detalle or '' }}</div>
+    <button class="sec small" onclick="procesar('{{ p }}')">desde aquí</button>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="two">
+  <div>
+    <h2>Resultados</h2>
+    <div class="card">
+      {% if files.video %}
+      <video controls preload="metadata" style="width:100%;border-radius:8px" src="{{ url_for('files', fecha=fecha, rel='resumen_' ~ fecha ~ '.mp4') }}"></video>
+      <p><a href="{{ url_for('files', fecha=fecha, rel='resumen_' ~ fecha ~ '.mp4') }}" download>Descargar video</a>
+        {% if files.md %} · <a href="{{ url_for('files', fecha=fecha, rel='resumen_' ~ fecha ~ '.md') }}" download>Resumen .md</a>{% endif %}</p>
+      {% else %}<p class="mut">Todavía no hay video para este día.</p>{% endif %}
+      {% if files.tiktok %}<h3>Clips para TikTok</h3><ul>
+        {% for f in files.tiktok %}<li><a href="{{ url_for('files', fecha=fecha, rel='clips_tiktok/' ~ f) }}" download>{{ f }}</a></li>{% endfor %}</ul>{% endif %}
+      <h3>Grabaciones</h3>
+      <table class="small"><tr><th>Streamer</th><th>Parte</th><th>Inicio</th><th>Duración</th><th>Archivo</th></tr>
+        {% for p in parts %}<tr><td>{{ p.slug }}</td><td>{{ p.part_index }}</td><td>{{ p.started_at|clock }}</td>
+          <td>{{ (p.duration or ((p.ended_at or p.started_at) - p.started_at))|dur }}</td>
+          <td class="mut">{{ (p.final_path or p.path).replace('\\', '/').split('/')[-1] }}</td></tr>
+        {% else %}<tr><td colspan="5" class="mut">Sin grabaciones.</td></tr>{% endfor %}
+      </table>
+      {% if runs %}<h3>Llamadas a Claude</h3>
+      <table class="small"><tr><th>Tipo</th><th>Modelo</th><th>Tokens (in/out)</th><th>Costo</th></tr>
+        {% for r in runs %}<tr><td>{{ r.tipo }}</td><td>{{ r.modelo }}</td><td>{{ r.input_tokens }} / {{ r.output_tokens }}</td><td>${{ '%.3f'|format(r.costo_usd) }}</td></tr>{% endfor %}
+      </table>{% endif %}
+    </div>
+  </div>
+  <div>
+    <h2>Contexto de X del día</h2>
+    <div class="card">
+      <p class="small mut">Pega posts o hilos de X sobre el evento (un post por bloque, separados por una línea en blanco). Si copias el enlace del post, se guarda el autor.</p>
+      <textarea id="xtext" placeholder="@usuario: Westcol le respondió a Gear en pleno directo…">{{ s.x_contexto }}</textarea>
+      <div class="row" style="margin-top:8px"><button onclick="guardarX()">Guardar contexto</button>
+        <span class="small mut" id="xinfo">{{ x_posts|length }} posts guardados</span></div>
+      <div class="small" id="xtemas"></div>
+    </div>
+    <h2>Claude</h2>
+    <div class="card">
+      <p class="small mut">Modo actual: <b>{{ cfg.claude.modo }}</b>. En modo manual (o si se acaba el presupuesto): exporta el paquete, pégalo en claude.ai, y pega aquí la respuesta JSON.</p>
+      <div class="row"><button class="sec" onclick="exportar()">1 · Generar y copiar paquete</button>
+        <button class="sec" onclick="copiarPrompt()">Copiar solo el prompt maestro</button></div>
+      <label>2 · Respuesta JSON de Claude</label>
+      <textarea id="resp" placeholder='{"titulo_video": "...", "guion": [...], ...}'></textarea>
+      <div class="row" style="margin-top:8px"><button onclick="importar()">Importar y renderizar</button></div>
+      {% if decision %}<p class="small">Decisión guardada ({{ decision.origen }}): <b>{{ decision.titulo_video }}</b> · {{ decision.guion|selectattr('tipo', 'equalto', 'clip')|list|length }} clips.</p>
+        {% for w in decision.advertencias or [] %}<div class="small" style="color:var(--warn)">⚠ {{ w }}</div>{% endfor %}{% endif %}
+    </div>
+  </div>
+</div>
+
+<h2>Candidatos ({{ moments|length }})</h2>
+{% for m in moments %}
+<details>
+  <summary>{% if m.componentes.pareja %}<span class="star">★</span> {% endif %}<b>#{{ m.rank }} · {{ m.nombre }}</b>
+    <span class="mut">{{ m.start_ts|clock }}–{{ m.end_ts|clock }} ({{ (m.end_ts - m.start_ts)|round|int }} s)</span>
+    · puntuación {{ '%.2f'|format(m.score) }} · <span class="small">{{ m.por_que }}</span></summary>
+  {% for t in m.transcripcion %}<div class="tr"><b>{{ t.start_ts|clock }}</b> {{ t.texto }}</div>
+  {% else %}<div class="mut small">Sin transcripción todavía (paso "transcribir").</div>{% endfor %}
+</details>
+{% else %}<p class="mut">Sin candidatos todavía.</p>{% endfor %}
+
+<script>
+const FECHA = "{{ fecha }}";
+async function procesar(desde) {
+  try { await api(`/api/sesion/${FECHA}/procesar`, { desde }); toast(`Procesando desde "${desde}"… mira el Panel`); setTimeout(() => location.reload(), 2500); }
+  catch (e) { toast(e.message, 6000); }
+}
+async function guardarX() {
+  try {
+    const r = await api(`/api/sesion/${FECHA}/x`, { texto: document.getElementById("xtext").value });
+    document.getElementById("xinfo").textContent = `${r.posts} posts guardados`;
+    document.getElementById("xtemas").innerHTML = "Temas: " + r.temas.map(([k, n]) => `${esc(k)} (${n})`).join(", ");
+    toast("Contexto de X guardado");
+  } catch (e) { toast(e.message, 6000); }
+}
+async function exportar() {
+  try { const r = await api(`/api/sesion/${FECHA}/exportar`, {}); await copyText(r.texto); toast(`Paquete ${r.archivo} copiado: pégalo en claude.ai`, 6000); }
+  catch (e) { toast(e.message, 6000); }
+}
+async function copiarPrompt() { const r = await api("/api/prompt-maestro"); await copyText(r.texto); }
+async function importar() {
+  try {
+    const r = await api(`/api/sesion/${FECHA}/importar`, { texto: document.getElementById("resp").value, renderizar: true });
+    toast(`Importado: ${r.clips} clips${r.advertencias.length ? " · " + r.advertencias.length + " avisos" : ""}. ${r.render ? "Renderizando…" : ""}`, 6000);
+    setTimeout(() => location.reload(), 2500);
+  } catch (e) { toast(e.message, 8000); }
+}
+</script>
+{% endblock %}
