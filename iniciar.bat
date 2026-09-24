@@ -9,5 +9,5 @@ if not exist .venv\Scripts\activate.bat (
   exit /b 1
 )
 call .venv\Scripts\activate.bat
-python -m clipmax web
+python arrancar.py web
 pause

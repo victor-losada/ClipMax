@@ -28,13 +28,13 @@ if errorlevel 1 (
   winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements
   if errorlevel 1 (
     echo winget no disponible: descargo ffmpeg dentro de bin\
-    python -m clipmax descargar --sin-whisper --modelo --ffmpeg
+    python arrancar.py descargar --sin-whisper --modelo --ffmpeg
   )
 )
 
 echo.
 echo Descargando whisper.cpp y modelos base + small ^(~650 MB^)...
-python -m clipmax descargar --modelo base small
+python arrancar.py descargar --modelo base small
 
 if not exist config.yaml copy config.example.yaml config.yaml >nul
 if not exist .env copy .env.example .env >nul
@@ -46,5 +46,5 @@ echo   1. Abre .env y pega tu ANTHROPIC_API_KEY ^(o usa modo manual^)
 echo   2. Ejecuta iniciar.bat y configura streamers en el navegador
 echo   3. Si instalaste ffmpeg con winget, cierra y abre la consola
 echo ============================================================
-python -m clipmax doctor --sin-red
+python arrancar.py doctor --sin-red
 pause
