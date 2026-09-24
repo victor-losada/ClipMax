@@ -22,8 +22,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import tools
-from .cards import render_card, render_lower_third
+from . import effects, tools
+from .cards import render_card, render_lower_third, render_split_tags
 from .config import get_streamer, session_dir, streamer_name
 from .db import Database
 from .recorder import locate_range, snapshot_from_file
@@ -42,6 +42,11 @@ class ClipSpec:
     wall0: float             # hora de pared del inicio del tramo
     titulo: str = ""
     keep: list[tuple[float, float]] = field(default_factory=list)  # relativo a file_start
+    words: list[tuple[float, float, str]] = field(default_factory=list)  # palabras, relativas al tramo
+    momento: float | None = None     # remate (relativo al tramo): zoom + efecto de sonido
+    efecto: str = ""                 # efecto de sonido en el remate
+    whoosh: bool = False             # efecto de transición al entrar (viene de una tarjeta)
+    partner: "ClipSpec | None" = None  # otro streamer a la par (pantalla dividida)
 
     @property
     def kept_duration(self) -> float:
@@ -63,12 +68,15 @@ def merge_intervals(iv: list[tuple[float, float]], max_gap: float = 0.0) -> list
 
 
 def speech_keep_intervals(clip_len: float, speech: list[tuple[float, float]], max_gap: float,
-                          pad: float = 0.35, tail: float = 1.5, min_piece: float = 0.6) -> list[tuple[float, float]]:
+                          pad: float = 0.35, tail: float = 1.5, min_piece: float = 0.6,
+                          min_ratio: float = 0.25, min_keep_s: float = 4.0) -> list[tuple[float, float]]:
     """Qué conservar de un clip dado dónde hay voz: se eliminan huecos sin voz > max_gap.
 
     - Cada tramo de voz se amplía `pad` s a cada lado (whisper no es exacto al milisegundo).
     - Tras la última frase se deja `tail` s para la reacción (risa, grito).
     - Huecos <= max_gap se conservan: son pausas naturales del habla.
+    - Si recortar dejaría menos del 25 % del clip (o menos de 4 s), no se recorta: es un
+      momento visual o de reacción sin palabras, o la transcripción no lo cubre.
     """
     if not speech:
         return [(0.0, clip_len)]
@@ -78,7 +86,11 @@ def speech_keep_intervals(clip_len: float, speech: list[tuple[float, float]], ma
     merged = merge_intervals(padded, max_gap)
     last_a, last_b = merged[-1]
     merged[-1] = (last_a, min(clip_len, last_b + tail))
-    return [(round(a, 3), round(b, 3)) for a, b in merged if b - a >= min_piece] or [(0.0, clip_len)]
+    keep = [(round(a, 3), round(b, 3)) for a, b in merged if b - a >= min_piece]
+    kept = sum(b - a for a, b in keep)
+    if not keep or kept < min(min_keep_s, clip_len) or kept < clip_len * min_ratio:
+        return [(0.0, clip_len)]
+    return keep
 
 
 _SIL_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -182,35 +194,6 @@ def layout_filter(src: str, dst: str, src_size: tuple[int, int], out_size: tuple
     return fit_blur(src, dst, iw, ih, w, h, "lf")
 
 
-def build_clip_filtergraph(keep: list[tuple[float, float]], layout: str, fps: int,
-                           title_dur: float | None) -> str:
-    """filter_complex completo: cortes internos + concat + encuadre + título + audio normalizado."""
-    k = len(keep)
-    parts = [f"[0:v]setpts=PTS-STARTPTS,split={k}" + "".join(f"[vs{i}]" for i in range(k)),
-             f"[0:a]asetpts=PTS-STARTPTS,asplit={k}" + "".join(f"[as{i}]" for i in range(k))]
-    for i, (a, b) in enumerate(keep):
-        ln = b - a
-        fade = min(0.04, ln / 4)
-        parts.append(f"[vs{i}]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[v{i}]")
-        parts.append(
-            f"[as{i}]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,"
-            f"afade=t=in:st=0:d={fade:.3f},afade=t=out:st={max(0.0, ln - fade):.3f}:d={fade:.3f}[a{i}]"
-        )
-    parts.append("".join(f"[v{i}][a{i}]" for i in range(k)) + f"concat=n={k}:v=1:a=1[vc][ac]")
-    parts.append(layout)  # [vc] -> ... -> [vl]
-    if title_dur:
-        t = title_dur
-        parts.append(f"[1:v]format=rgba,fade=t=in:st=0.2:d=0.3:alpha=1,"
-                     f"fade=t=out:st={max(0.5, t - 0.5):.2f}:d=0.4:alpha=1[ttl]")
-        parts.append("[vl][ttl]overlay=0:0:eof_action=pass[vt]")
-        parts.append(f"[vt]fps={fps},format=yuv420p[vout]")
-    else:
-        parts.append(f"[vl]fps={fps},format=yuv420p[vout]")
-    parts.append("[ac]aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,"
-                 "aformat=sample_fmts=fltp:channel_layouts=stereo[aout]")
-    return ";".join(parts)
-
-
 def encode_args(cfg: dict) -> list[str]:
     ed = cfg["edicion"]
     codec = ed["codec"]
@@ -258,8 +241,9 @@ def prepare_clip(cfg: dict, db: Database, session: dict, cand: dict, inicio: flo
     ed = cfg["edicion"]
     method = ed["metodo_silencios"]
     max_gap = float(ed["silencio_max_s"])
+    segs = db.segments(session["id"], cand["slug"], wall0, wall0 + dur)
+    spec.words = effects.segment_words(segs, wall0, dur)
     if method == "transcripcion":
-        segs = db.segments(session["id"], cand["slug"], wall0, wall0 + dur)
         speech = [(max(0.0, s["start_ts"] - wall0), min(dur, s["end_ts"] - wall0)) for s in segs]
         spec.keep = speech_keep_intervals(dur, speech, max_gap)
     elif method == "audio":
@@ -269,23 +253,172 @@ def prepare_clip(cfg: dict, db: Database, session: dict, cand: dict, inicio: flo
     return spec
 
 
+def prepare_partner(cfg: dict, db: Database, session: dict, main: ClipSpec, cand: dict) -> ClipSpec | None:
+    """El mismo tramo de tiempo (hora de pared) en el stream de otro streamer."""
+    if cand["slug"] == main.slug:
+        return None
+    loc = locate_range(db, session["id"], cand["slug"], main.wall0, main.wall0 + main.dur,
+                       float(cfg["grabacion"]["desfase_chat_s"]))
+    if not loc or loc[2] < main.dur * 0.5:
+        return None
+    path, start, dur, wall0 = loc
+    return ClipSpec(slug=cand["slug"], nombre=streamer_name(cfg, cand["slug"]), path=path,
+                    file_start=start, dur=dur, wall0=wall0)
+
+
+def _half_filter(src: str, dst: str, src_size: tuple[int, int], half: tuple[int, int],
+                 streamer: dict, tag: str) -> str:
+    """Una mitad de la pantalla dividida: la cámara si está definida (caras), si no el stream completo."""
+    iw, ih = src_size
+    hw, hh = half
+    cam = streamer.get("camara")
+    if cam:
+        cw, ch = _even(cam["w"] * iw), _even(cam["h"] * ih)
+        cx, cy = _even_off(cam["x"] * iw), _even_off(cam["y"] * ih)
+        cw, ch = min(cw, iw - cx), min(ch, ih - cy)
+        return (f"[{src}]crop={cw}:{ch}:{cx}:{cy},scale={hw}:{hh}:force_original_aspect_ratio=increase,"
+                f"crop={hw}:{hh},setsar=1[{dst}]")
+    return fit_blur(src, dst, iw, ih, hw, hh, tag)
+
+
+def split_layout(main_src: str, partner_src: str, dst: str, main: tuple[tuple[int, int], dict],
+                 partner: tuple[tuple[int, int], dict], out_size: tuple[int, int]) -> str:
+    """Pantalla dividida: lado a lado en horizontal, arriba/abajo en vertical."""
+    w, h = out_size
+    vertical = h > w
+    half = (w, _even(h / 2)) if vertical else (_even(w / 2), h)
+    a = _half_filter(main_src, "hmo", main[0], half, main[1], "hm")
+    b = _half_filter(partner_src, "hpo", partner[0], half, partner[1], "hp")
+    stack = "vstack" if vertical else "hstack"
+    return f"{a};{b};[hmo][hpo]{stack}=inputs=2,scale={w}:{h},setsar=1[{dst}]"
+
+
+def _remap_near(t: float | None, keep: list[tuple[float, float]]) -> float | None:
+    """Como effects.remap, pero si el instante cayó en un silencio cortado usa el siguiente tramo."""
+    if t is None:
+        return None
+    r = effects.remap(t, keep)
+    if r is not None:
+        return r
+    for a, _b in keep:
+        if a > t:
+            return effects.remap(a, keep)
+    return None
+
+
 def render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int],
-                title_png: Path | None = None) -> float:
-    fps = int(cfg["edicion"]["fps"])
+                title_png: Path | None = None, *, work: Path | None = None,
+                sfx_lib: dict | None = None, effects_on: bool = True) -> float:
+    """Renderiza un clip. Si algún efecto hace fallar a ffmpeg, reintenta sin efectos."""
+    try:
+        return _render_clip(cfg, spec, out, out_size, title_png, work, sfx_lib, effects_on)
+    except Exception as exc:  # noqa: BLE001
+        if not effects_on:
+            raise
+        log.warning("[%s] el render con efectos falló; reintento sin efectos: %s", spec.slug, str(exc)[-400:])
+        return _render_clip(cfg, spec, out, out_size, title_png, work, None, False)
+
+
+def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int], title_png: Path | None,
+                 work: Path | None, sfx_lib: dict | None, effects_on: bool) -> float:
+    ed = cfg["edicion"]
+    fps = int(ed["fps"])
     streamer = get_streamer(cfg, spec.slug) or {"modo": "juego_cara", "camara": None}
     modo = streamer.get("modo", "juego_cara")
     if modo == "cara" and not streamer.get("camara"):
         log.warning("[%s] modo 'cara' sin recuadro de cámara configurado; uso el stream completo", spec.slug)
-    layout = layout_filter("vc", "vl", _src_size(spec.path), out_size, modo, streamer.get("camara"))
     kept = spec.kept_duration
-    title_dur = min(5.0, kept) if title_png else None
-    graph = build_clip_filtergraph(spec.keep, layout, fps, title_dur)
-    cmd = [tools.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
-           "-ss", f"{spec.file_start:.3f}", "-t", f"{spec.dur:.3f}", "-i", spec.path]
+    keep = spec.keep or [(0.0, spec.dur)]
+    k = len(keep)
+    inputs: list[list[str]] = [["-ss", f"{spec.file_start:.3f}", "-t", f"{spec.dur:.3f}", "-i", spec.path]]
+
+    def add_input(args: list[str]) -> int:
+        inputs.append(args)
+        return len(inputs) - 1
+
+    partner = spec.partner if (effects_on and ed.get("pantalla_dividida")) else None
+    parts = [f"[0:v]setpts=PTS-STARTPTS,split={k}" + "".join(f"[vs{i}]" for i in range(k)),
+             f"[0:a]asetpts=PTS-STARTPTS,asplit={k}" + "".join(f"[as{i}]" for i in range(k))]
+    for i, (a, b) in enumerate(keep):
+        ln = b - a
+        fade = min(0.04, ln / 4)
+        parts.append(f"[vs{i}]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[v{i}]")
+        parts.append(f"[as{i}]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,"
+                     f"afade=t=in:st=0:d={fade:.3f},afade=t=out:st={max(0.0, ln - fade):.3f}:d={fade:.3f}[a{i}]")
+    parts.append("".join(f"[v{i}][a{i}]" for i in range(k)) + f"concat=n={k}:v=1:a=1[vc][ac]")
+
+    if partner:
+        ip = add_input(["-ss", f"{partner.file_start:.3f}", "-t", f"{partner.dur:.3f}", "-i", partner.path])
+        pre = max(0.0, partner.wall0 - spec.wall0)
+        post = max(0.0, spec.dur - pre - partner.dur) + 1.0
+        # Solo imagen del otro streamer: mezclar los dos audios haría eco (suelen estar en la misma llamada).
+        parts.append(f"[{ip}:v]setpts=PTS-STARTPTS,tpad=start_mode=clone:start_duration={pre:.3f}:"
+                     f"stop_mode=clone:stop_duration={post:.3f},split={k}" + "".join(f"[ps{i}]" for i in range(k)))
+        for i, (a, b) in enumerate(keep):
+            parts.append(f"[ps{i}]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[p{i}]")
+        parts.append("".join(f"[p{i}]" for i in range(k)) + f"concat=n={k}:v=1:a=0[vcp]")
+        pst = get_streamer(cfg, partner.slug) or {"camara": None}
+        parts.append(split_layout("vc", "vcp", "vl", (_src_size(spec.path), streamer),
+                                  (_src_size(partner.path), pst), out_size))
+    else:
+        parts.append(layout_filter("vc", "vl", _src_size(spec.path), out_size, modo, streamer.get("camara")))
+    cur = "vl"
+
+    moment = _remap_near(spec.momento, keep) if effects_on else None
+    if moment is not None and ed.get("zoom") and not partner:
+        parts.append(effects.zoom_filter(cur, "vz", moment, out_size, fps, float(ed.get("zoom_factor", 1.12))))
+        cur = "vz"
     if title_png:
-        cmd += ["-loop", "1", "-framerate", str(fps), "-t", f"{title_dur:.2f}", "-i", str(title_png)]
-    cmd += ["-filter_complex", graph, "-map", "[vout]", "-map", "[aout]", *encode_args(cfg), str(out)]
-    tools.run(cmd, timeout=max(600, spec.dur * 20))
+        title_dur = min(5.0, kept)
+        it = add_input(["-loop", "1", "-framerate", str(fps), "-t", f"{title_dur:.2f}", "-i", str(title_png)])
+        parts.append(f"[{it}:v]format=rgba,fade=t=in:st=0.2:d=0.3:alpha=1,"
+                     f"fade=t=out:st={max(0.5, title_dur - 0.5):.2f}:d=0.4:alpha=1[ttl]")
+        parts.append(f"[{cur}][ttl]overlay=0:0:eof_action=pass[vt]")
+        cur = "vt"
+    if partner and work:
+        tags = render_split_tags(spec.nombre, partner.nombre, out_size, work / f"{out.stem}_tags.png",
+                                 cfg["edicion"]["fuente"])
+        itg = add_input(["-loop", "1", "-framerate", str(fps), "-t", f"{kept:.2f}", "-i", str(tags)])
+        parts.append(f"[{cur}][{itg}:v]overlay=0:0:eof_action=pass[vtag]")
+        cur = "vtag"
+    cwd = None
+    if effects_on and ed.get("subtitulos") and work:
+        sub = effects.write_subtitles(cfg, effects.remap_words(spec.words, keep), out_size, work, out.stem)
+        if sub:
+            parts.append(f"[{cur}]subtitles=f={sub[0]}:fontsdir={sub[1]}[vsub]")
+            cur, cwd = "vsub", work
+    parts.append(f"[{cur}]fps={fps},format=yuv420p[vout]")
+
+    parts.append("[ac]aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,"
+                 "aformat=sample_fmts=fltp:channel_layouts=stereo[asp]")
+    events: list[tuple[Path, float, float]] = []
+    if effects_on and ed.get("efectos_sonido") and sfx_lib:
+        vol = float(ed.get("sfx_volumen", 0.55))
+        trans = ed.get("sfx_transicion") or ""
+        if spec.whoosh and trans in sfx_lib:
+            events.append((sfx_lib[trans], 0.0, vol * 0.6))
+        if spec.efecto and spec.efecto in sfx_lib and moment is not None:
+            lead = 0.3 if (ed.get("zoom") and not partner) else 0.0  # que el golpe caiga con el zoom
+            events.append((sfx_lib[spec.efecto], max(0.0, moment - lead), vol))
+    if events:
+        labels = []
+        for j, (path, t, v) in enumerate(events):
+            isx = add_input(["-i", str(path)])
+            parts.append(f"[{isx}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                         f"adelay=delays={int(t * 1000)}:all=1,volume={v:.2f}[sfx{j}]")
+            labels.append(f"[sfx{j}]")
+        parts.append("[asp]" + "".join(labels) + f"amix=inputs={1 + len(labels)}:duration=first:"
+                     "dropout_transition=0:normalize=0,alimiter=limit=0.95[aout]")
+    else:
+        parts.append("[asp]anull[aout]")
+
+    cmd = [tools.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y"]
+    for args in inputs:
+        cmd += args
+    # -t en la salida: tope de seguridad por si algún filtro se desboca.
+    cmd += ["-filter_complex", ";".join(parts), "-map", "[vout]", "-map", "[aout]", *encode_args(cfg),
+            "-t", f"{kept + 0.5:.2f}", str(out)]
+    tools.run(cmd, timeout=max(240, spec.dur * 12), cwd=cwd)
     return kept
 
 
@@ -350,6 +483,40 @@ def slugify(text: str, maxlen: int = 40) -> str:
 # Render completo
 # ---------------------------------------------------------------------------
 
+def apply_clip_effects(cfg: dict, db: Database, session: dict, spec: ClipSpec, cand: dict,
+                       item: dict, by_id: dict[int, dict]) -> None:
+    """Traduce lo que marcó Claude (remate, efecto, pantalla dividida) al tramo del clip."""
+    ed = cfg["edicion"]
+    mom = float(item.get("momento_clave") or 0)
+    if mom > 0:
+        rel = cand["start_ts"] + mom - spec.wall0
+        spec.momento = rel if 0 <= rel <= spec.dur else None
+    if spec.momento is None and ed.get("zoom_auto"):
+        spec.momento = effects.auto_moment(db, session["id"], spec.slug, spec.wall0, spec.dur)
+    spec.efecto = str(item.get("efecto_sonido") or "")
+    other = by_id.get(int(item.get("pantalla_dividida_con") or 0))
+    if other and ed.get("pantalla_dividida"):
+        spec.partner = prepare_partner(cfg, db, session, spec, other)
+
+
+def budget_sfx(cfg: dict, specs: list[ClipSpec]) -> None:
+    """'Uno que otro' efecto: los de Claude primero y luego transiciones hasta el máximo del video."""
+    limit = int(cfg["edicion"].get("sfx_max_por_video", 10))
+    used = 0
+    for s in specs:
+        if s.efecto:
+            if used < limit:
+                used += 1
+            else:
+                s.efecto = ""
+    for s in specs:
+        if s.whoosh:
+            if used < limit:
+                used += 1
+            else:
+                s.whoosh = False
+
+
 def render_summary(cfg: dict, db: Database, session: dict, decision: dict, candidates: list[dict],
                    progress=None) -> Path:
     fecha = session["fecha"]
@@ -370,7 +537,11 @@ def render_summary(cfg: dict, db: Database, session: dict, decision: dict, candi
             if cand:
                 spec = prepare_clip(cfg, db, session, cand, it["inicio"], it["fin"], it.get("titulo_en_pantalla", ""))
                 if spec:
+                    apply_clip_effects(cfg, db, session, spec, cand, it, by_id)
+                    spec.whoosh = idx > 0 and items[idx - 1]["tipo"] == "narracion"
                     specs[idx] = spec
+    budget_sfx(cfg, [specs[i] for i in sorted(specs)])
+    sfx_lib = effects.sfx_library(cfg) if cfg["edicion"].get("efectos_sonido") else None
 
     def bg_for(idx: int) -> Path | None:
         """Fotograma del clip siguiente (o anterior) como fondo de la tarjeta."""
@@ -412,7 +583,7 @@ def render_summary(cfg: dict, db: Database, session: dict, decision: dict, candi
                 if cfg["edicion"]["titulos_en_pantalla"] and (spec.titulo or spec.nombre):
                     title_png = render_lower_third(spec.titulo, spec.nombre, size, work / f"t_{idx:03d}.png",
                                                    cfg["edicion"]["fuente"])
-                total += render_clip(cfg, spec, out, size, title_png)
+                total += render_clip(cfg, spec, out, size, title_png, work=work, sfx_lib=sfx_lib)
         except Exception as exc:  # noqa: BLE001 - una pieza rota no debe tumbar el video entero
             log.error("Falló la pieza %d (%s): %s", idx, it["tipo"], exc)
             continue
@@ -444,6 +615,13 @@ def export_tiktok_clips(cfg: dict, db: Database, session: dict, decision: dict, 
     size = (1080, 1920)
     by_id = {int(c["id"]): c for c in candidates}
     outs = []
+    work = folder / "_render"
+    work.mkdir(exist_ok=True)
+    sfx_lib = effects.sfx_library(cfg) if cfg["edicion"].get("efectos_sonido") else None
+    guion_by_cand: dict[int, dict] = {}
+    for g in decision.get("guion", []):
+        if g["tipo"] == "clip":
+            guion_by_cand.setdefault(int(g["candidato_id"]), g)
     for i, m in enumerate(decision.get("mejores_momentos", []), 1):
         cand = by_id.get(int(m["candidato_id"]))
         if not cand:
@@ -453,15 +631,18 @@ def export_tiktok_clips(cfg: dict, db: Database, session: dict, decision: dict, 
         spec = prepare_clip(cfg, db, session, cand, m["inicio"], m["fin"], m["titulo"])
         if not spec:
             continue
+        g = guion_by_cand.get(int(m["candidato_id"]), {})
+        apply_clip_effects(cfg, db, session, spec, cand, {**g, "pantalla_dividida_con": 0}, by_id)
         out = folder / f"{i:02d}_{slugify(m['titulo'] or cand['nombre'])}.mp4"
         title_png = render_lower_third(m["titulo"], spec.nombre, size, folder / f"_t{i:02d}.png",
                                        cfg["edicion"]["fuente"])
         try:
-            render_clip(cfg, spec, out, size, title_png)
+            render_clip(cfg, spec, out, size, title_png, work=work, sfx_lib=sfx_lib)
             outs.append(out)
             db.add_output(session["id"], "clip_tiktok", str(out), {"titulo": m["titulo"]})
         except Exception as exc:  # noqa: BLE001
             log.error("Falló el clip TikTok %d: %s", i, exc)
         finally:
             title_png.unlink(missing_ok=True)
+    shutil.rmtree(work, ignore_errors=True)
     return outs

@@ -145,6 +145,18 @@ DEFAULTS: dict[str, Any] = {
         "fuente": "",              # vacío = Segoe UI Bold / Arial Bold en Windows
         "exportar_clips_tiktok": True,
         "titulos_en_pantalla": True,
+        # Efectos (ver clipmax/effects.py)
+        "subtitulos": True,            # subtítulos dinámicos: la palabra que se dice se ilumina
+        "subtitulos_palabras": 3,      # palabras visibles a la vez
+        "subtitulos_fuente": "",       # .ttf; vacío = Arial Black / Impact / Segoe UI Black
+        "zoom": True,                  # zoom suave en el remate
+        "zoom_factor": 1.12,
+        "zoom_auto": True,             # si Claude no marca el remate, usar el pico de chat
+        "pantalla_dividida": True,     # los dos streamers a la par cuando Claude lo pide
+        "efectos_sonido": True,
+        "sfx_volumen": 0.55,
+        "sfx_transicion": "whoosh",    # al entrar a un clip después de una tarjeta ("" = ninguno)
+        "sfx_max_por_video": 10,       # "uno que otro": tope de efectos en todo el resumen
     },
     "web": {"host": "127.0.0.1", "puerto": 5000, "abrir_navegador": True},
 }

@@ -43,6 +43,14 @@ Escribe el resumen como la historia del día, no como una lista de clips:
 - El chipeo se muestra tal cual, pero la narración no suma insultos, ataques personales ni burlas por lo que alguien es. No inventes datos (puntos, muertes, premios, eliminaciones) que no estén en el material.
 - `titulo_en_pantalla`: frase corta en mayúsculas (unas 6 palabras) que se superpone al inicio del clip.
 
+## Efectos (con criterio)
+
+El video lleva subtítulos dinámicos automáticos. Además, en cada clip puedes marcar:
+
+- `momento_clave`: el segundo exacto del remate (la frase que pega, la reacción), en el mismo reloj que `inicio`/`fin` y dentro de ese rango. Ahí entra un zoom suave. Usa 0 si el clip no tiene un remate claro.
+- `efecto_sonido`: suena en el `momento_clave`. Disponibles: {{efectos}}. Úsalo solo cuando sume: un golpe en la humillación, una campana cuando alguien suelta algo que no debía. Como máximo {{max_efectos}} en todo el video; lo normal es menos. Deja "" en el resto.
+- `pantalla_dividida_con`: si el candidato tiene "Mismo suceso que: candidato N", puedes poner ese N para mostrar a los dos streamers a la par (se escucha solo el audio del clip principal). Úsalo cuando ver la cara del otro al mismo tiempo sea el chiste, por ejemplo en el chipeo en vivo. Usa 0 en los demás.
+
 ## Documento de mejores momentos
 
 Elige de 3 a 8 mejores momentos del día (pueden coincidir con clips del video). Para cada uno: título, por qué importa (qué cambia en la historia del torneo o por qué la comunidad lo va a comentar), 3 captions para TikTok (máximo 150 caracteres, con el gancho en las primeras palabras, sin spoilear el remate) y de 3 a 6 hashtags, incluyendo #{{hashtag}}.
@@ -60,9 +68,11 @@ Responde únicamente con un objeto JSON con esta forma (sin texto antes ni despu
   "lore_para_manana": "string, 3 a 6 líneas",
   "guion": [
     {"tipo": "narracion", "texto": "string", "candidato_id": 0, "inicio": 0, "fin": 0,
-     "titulo_en_pantalla": "", "prioridad": 5, "motivo": ""},
+     "titulo_en_pantalla": "", "prioridad": 5, "motivo": "",
+     "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0},
     {"tipo": "clip", "texto": "", "candidato_id": 12, "inicio": 8.5, "fin": 61.0,
-     "titulo_en_pantalla": "GEAR RESPONDE", "prioridad": 5, "motivo": "por qué entra este corte"}
+     "titulo_en_pantalla": "GEAR RESPONDE", "prioridad": 5, "motivo": "por qué entra este corte",
+     "momento_clave": 42.3, "efecto_sonido": "boom", "pantalla_dividida_con": 15}
   ],
   "mejores_momentos": [
     {"candidato_id": 12, "inicio": 8.5, "fin": 61.0, "titulo": "string", "por_que_importa": "string",
@@ -73,4 +83,4 @@ Responde únicamente con un objeto JSON con esta forma (sin texto antes ni despu
 }
 ```
 
-En los elementos de tipo `narracion`, `candidato_id`, `inicio` y `fin` van en 0. En los de tipo `clip`, `texto` va vacío.
+En los elementos de tipo `narracion`, `candidato_id`, `inicio`, `fin`, `momento_clave` y `pantalla_dividida_con` van en 0 y `efecto_sonido` vacío. En los de tipo `clip`, `texto` va vacío.

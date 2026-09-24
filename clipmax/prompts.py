@@ -14,6 +14,7 @@ import json
 import re
 from pathlib import Path
 
+from . import effects
 from .config import PROJECT_ROOT, pair_slugs, session_dir, streamer_name
 from .db import Database
 from .detector import describe_components
@@ -34,8 +35,12 @@ _GUION_ITEM = {
         "titulo_en_pantalla": {"type": "string"},
         "prioridad": {"type": "integer"},
         "motivo": {"type": "string"},
+        "momento_clave": {"type": "number"},
+        "efecto_sonido": {"type": "string"},
+        "pantalla_dividida_con": {"type": "integer"},
     },
-    "required": ["tipo", "texto", "candidato_id", "inicio", "fin", "titulo_en_pantalla", "prioridad", "motivo"],
+    "required": ["tipo", "texto", "candidato_id", "inicio", "fin", "titulo_en_pantalla", "prioridad", "motivo",
+                 "momento_clave", "efecto_sonido", "pantalla_dividida_con"],
     "additionalProperties": False,
 }
 _MOMENTO = {
@@ -93,6 +98,8 @@ def master_prompt(cfg: dict) -> str:
         "duracion_min": str(int(cfg["edicion"]["duracion_min_min"])),
         "duracion_max": str(int(cfg["edicion"]["duracion_max_min"])),
         "hashtag": _hashtag(cfg["evento"]["nombre"]),
+        "efectos": ", ".join(effects.sfx_names(cfg)),
+        "max_efectos": str(int(cfg["edicion"].get("sfx_max_por_video", 10))),
     }
     for key, val in values.items():
         text = text.replace("{{" + key + "}}", val)

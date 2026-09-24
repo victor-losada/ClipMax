@@ -160,7 +160,14 @@ class Database:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.executescript(SCHEMA)
+            self._migrate()
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Columnas agregadas en versiones posteriores (bases de datos creadas antes)."""
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(transcript_segments)")}
+        if "palabras_json" not in cols:  # tiempos por palabra para los subtítulos dinámicos
+            self._conn.execute("ALTER TABLE transcript_segments ADD COLUMN palabras_json TEXT")
 
     # -- primitivas ----------------------------------------------------------
     def execute(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Cursor:
@@ -326,11 +333,17 @@ class Database:
         return int(row["n"])
 
     # -- transcripciones -----------------------------------------------------
-    def add_segments(self, session_id: int, slug: str, segs: list[tuple[float, float, str]], fuente: str) -> None:
+    def add_segments(self, session_id: int, slug: str, segs: list[tuple], fuente: str) -> None:
+        """segs: (inicio, fin, texto) o (inicio, fin, texto, palabras[[ini, fin, palabra], ...])."""
+        rows = []
+        for seg in segs:
+            a, b, t = seg[0], seg[1], seg[2]
+            words = seg[3] if len(seg) > 3 and seg[3] else None
+            rows.append((session_id, slug, a, b, t, fuente,
+                         json.dumps(words, ensure_ascii=False) if words else None))
         self.executemany(
-            "INSERT INTO transcript_segments (session_id, slug, start_ts, end_ts, texto, fuente) VALUES (?,?,?,?,?,?)",
-            [(session_id, slug, a, b, t, fuente) for a, b, t in segs],
-        )
+            "INSERT INTO transcript_segments (session_id, slug, start_ts, end_ts, texto, fuente, palabras_json) "
+            "VALUES (?,?,?,?,?,?,?)", rows)
 
     def segments(self, session_id: int, slug: str, t0: float, t1: float, fuente: str | None = None) -> list[dict]:
         sql = """SELECT * FROM transcript_segments WHERE session_id=? AND slug=?
@@ -339,7 +352,10 @@ class Database:
         if fuente:
             sql += " AND fuente=?"
             params.append(fuente)
-        return self.query(sql + " ORDER BY start_ts", params)
+        rows = self.query(sql + " ORDER BY start_ts", params)
+        for r in rows:
+            r["palabras"] = json.loads(r.pop("palabras_json") or "null") or []
+        return rows
 
     def covered_until(self, session_id: int, slug: str, fuente: str) -> float:
         row = self.query_one(

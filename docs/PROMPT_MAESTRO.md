@@ -39,8 +39,10 @@ python -m clipmax importar-respuesta respuesta.json --fecha 2026-09-23
   "resumen_del_dia": "...",
   "lore_para_manana": "...",
   "guion": [
-    {"tipo": "narracion", "texto": "...", "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 5, "motivo": ""},
-    {"tipo": "clip", "texto": "", "candidato_id": 12, "inicio": 8.5, "fin": 61.0, "titulo_en_pantalla": "GEAR RESPONDE", "prioridad": 5, "motivo": "..."}
+    {"tipo": "narracion", "texto": "...", "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 5, "motivo": "",
+     "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0},
+    {"tipo": "clip", "texto": "", "candidato_id": 12, "inicio": 8.5, "fin": 61.0, "titulo_en_pantalla": "GEAR RESPONDE", "prioridad": 5, "motivo": "...",
+     "momento_clave": 42.3, "efecto_sonido": "boom", "pantalla_dividida_con": 15}
   ],
   "mejores_momentos": [{"candidato_id": 12, "inicio": 8.5, "fin": 61.0, "titulo": "...", "por_que_importa": "...", "captions_tiktok": ["..."], "hashtags": ["#Desafio4"]}],
   "descartados": [{"candidato_id": 3, "motivo": "gameplay sin conversación"}],
@@ -50,6 +52,9 @@ python -m clipmax importar-respuesta respuesta.json --fecha 2026-09-23
 
 - `inicio` / `fin` van en segundos desde el inicio de cada candidato. ClipMax los ajusta al límite de la frase más cercana y recorta los silencios internos.
 - `prioridad` decide qué se quita primero si el video pasa de 20 minutos.
+- `momento_clave` es el segundo del remate: ahí entran el zoom suave y el `efecto_sonido` (si Claude eligió uno).
+- `pantalla_dividida_con` muestra a la par a otro candidato del "mismo suceso" (por ejemplo, Gear reaccionando mientras Westcol habla).
+- Si pegas una respuesta vieja sin estos campos, funciona igual: se toman como 0 o vacíos.
 - `lore_para_manana` se guarda y al día siguiente vuelve como memoria, para que la historia tenga continuidad.
 
 ## Consejos para mejores resúmenes
