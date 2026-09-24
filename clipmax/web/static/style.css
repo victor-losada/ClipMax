@@ -17,7 +17,7 @@ h1 { font-size: 22px; margin: 4px 0 16px; } h2 { font-size: 17px; margin: 24px 0
 .mut { color: var(--mut); } .small { font-size: 13px; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--panel2); color: var(--mut); }
 .badge.grabando, .badge.ok, .badge.conectado, .badge.lista { background: #1f3d12; color: var(--acc); }
-.badge.offline, .badge.esperando, .badge.esperando_claude, .badge.reconectando { background: #3d3212; color: var(--warn); }
+.badge.offline, .badge.esperando, .badge.esperando_claude, .badge.esperando_contexto, .badge.reconectando, .badge.sin_datos { background: #3d3212; color: var(--warn); }
 .badge.error { background: #3d1515; color: var(--err); }
 .badge.en_curso, .badge.procesando { background: #12283d; color: var(--blue); }
 button, .btn { background: var(--acc); color: #000; border: 0; border-radius: 7px; padding: 7px 14px; font-weight: 700; cursor: pointer; font-size: 14px; display: inline-block; }

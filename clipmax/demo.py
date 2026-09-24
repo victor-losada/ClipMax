@@ -76,6 +76,9 @@ def _demo_config(minutes: float, use_claude: bool) -> Path:
     ]
     raw.setdefault("evento", {})["pareja_principal"] = ["westcol", "gearofnos"]
     raw["evento"]["programacion_activa"] = False
+    raw["evento"]["nombre"] = f"{raw['evento'].get('nombre', 'Desafío 4')} (DEMO)"
+    # La demo tiene su propia carpeta, base de datos y puerto: nunca se mezcla con tus datos reales.
+    raw["web"] = {"host": "127.0.0.1", "puerto": 5001, "abrir_navegador": True}
     raw.setdefault("grabacion", {}).update({"carpeta_datos": str(DEMO_DIR), "borrar_partes_ts": True})
     raw.setdefault("deteccion", {}).update({"ventana_base_min": 1.5, "candidatos_max": 8})
     raw.setdefault("edicion", {}).update({
@@ -142,7 +145,11 @@ def _canned_decision(candidates: list[dict]) -> dict:
 
 def run_demo(use_claude: bool = False, minutes: float = 6.0) -> None:
     if DEMO_DIR.exists():
-        shutil.rmtree(DEMO_DIR)
+        try:
+            shutil.rmtree(DEMO_DIR)
+        except OSError as exc:
+            raise SystemExit(f"No pude borrar la demo anterior ({exc}). Cierra la ventana de la demo "
+                             "(la que usa el puerto 5001) y vuelve a intentarlo.") from exc
     cfg_path = _demo_config(minutes, use_claude)
     store = ConfigStore(cfg_path)
     cfg = store.get()
@@ -195,8 +202,10 @@ def run_demo(use_claude: bool = False, minutes: float = 6.0) -> None:
         candidates, _material = pipe._material()
         decision, warnings = brain.validate_decision(cfg, _canned_decision(candidates), candidates)
         brain.save_decision(cfg, db, session, decision, "demo")
+        db.set_pipeline_step(sid, "decidir", "ok", "decisión de ejemplo de la demo (sin llamar a Claude)")
         pkg = pipe.export_manual()
         print(f"   Paquete para claude.ai generado (para que veas cómo luce): {pkg}")
+    db.set_pipeline_step(sid, "transcribir", "ok", "la demo trae transcripción simulada")
 
     print("5/5 Editando video y reporte…")
     if pipe.run("editar", "reportar") != "ok":
@@ -207,3 +216,5 @@ def run_demo(use_claude: bool = False, minutes: float = 6.0) -> None:
     for p in sorted(folder.glob("resumen_*")) + sorted((folder / "clips_tiktok").glob("*.mp4")):
         print("  ", p)
     print(json.dumps({"candidatos": len(prompts.load_candidates(cfg, fecha))}, ensure_ascii=False))
+    print("\nLa demo usa su propia carpeta (data_demo) y NO aparece en la web normal (puerto 5000).")
+    print("Para verla en el navegador:  python arrancar.py demo --ver   (o demo.bat)  ->  http://127.0.0.1:5001")

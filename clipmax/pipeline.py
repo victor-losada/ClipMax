@@ -34,8 +34,30 @@ _LOCK = threading.Lock()
 _current: dict = {"fecha": None, "paso": None, "detalle": ""}
 
 
-class WaitingForClaude(Exception):
+class Paused(Exception):
+    """El pipeline se detiene sin error y espera algo del usuario."""
+
+    session_state = "esperando"
+    step_state = "esperando"
+
+
+class WaitingForClaude(Paused):
     """El paso 'decidir' quedó esperando la respuesta pegada desde claude.ai."""
+
+    session_state = "esperando_claude"
+
+
+class WaitingForContext(Paused):
+    """x.esperar_contexto: se espera a que el usuario pegue el contexto de X del día."""
+
+    session_state = "esperando_contexto"
+
+
+class NoData(Paused):
+    """El día no tiene grabaciones/chat (o nada detectable): no es un error."""
+
+    session_state = "sin_datos"
+    step_state = "sin_datos"
 
 
 def is_running() -> bool:
@@ -70,12 +92,28 @@ class Pipeline:
         return xcontext.keywords(texts)
 
     # -- pasos --------------------------------------------------------------------
+    def _has_chat(self) -> bool:
+        row = self.db.query_one("SELECT COUNT(*) AS n FROM chat_buckets WHERE session_id=?", (self.sid,))
+        return bool(row and row["n"])
+
+    def has_x_context(self) -> bool:
+        sess = self.db.get_session(self.sid)
+        return bool((sess and (sess["x_contexto"] or "").strip()) or self.db.x_posts(self.sid))
+
     def finalizar(self) -> str:
+        if not self.db.list_parts(self.sid) and not self._has_chat():
+            raise NoData("Este día todavía no tiene grabaciones ni chat. La grabación arranca sola a la hora "
+                         "programada o con «Iniciar ahora» en el Panel.")
         res = finalize_recordings(self.cfg, self.db, self.session)
         return f"{sum(len(v) for v in res.values())} archivo(s) MP4"
 
     def detectar(self) -> str:
         moments = detector.run_detection(self.cfg, self.db, self.session)
+        if not moments:
+            if not self.db.list_parts(self.sid) and not self._has_chat():
+                raise NoData("Este día no tiene grabaciones ni chat.")
+            raise NoData("Hubo grabación/chat pero no se detectó ningún momento (¿chat muy tranquilo o "
+                         "streamers offline?). Revisa el log o baja deteccion.umbral_z.")
         return f"{len(moments)} candidatos"
 
     def transcribir(self) -> str:
@@ -129,6 +167,9 @@ class Pipeline:
         return path
 
     def decidir(self) -> str:
+        if self.cfg["x"].get("esperar_contexto") and not self.has_x_context():
+            raise WaitingForContext("Esperando tu contexto de X: pégalo en «Contexto de X del día» (por ejemplo, "
+                                    "la salida de Grok) y el proceso sigue solo.")
         if self.cfg["claude"]["modo"] == "manual":
             path = self.export_manual()
             raise WaitingForClaude(f"Paquete listo para pegar en claude.ai: {path.name}")
@@ -190,11 +231,11 @@ class Pipeline:
                 log.info("[%s] paso %s…", self.session["fecha"], step)
                 try:
                     detail = getattr(self, step)()
-                except WaitingForClaude as wait:
-                    self.db.set_pipeline_step(self.sid, step, "esperando", str(wait))
-                    self.db.update_session(self.sid, estado="esperando_claude")
-                    log.info("%s", wait)
-                    return "esperando_claude"
+                except Paused as pause:
+                    self.db.set_pipeline_step(self.sid, step, pause.step_state, str(pause))
+                    self.db.update_session(self.sid, estado=pause.session_state)
+                    log.info("[%s] %s", self.session["fecha"], pause)
+                    return pause.session_state
                 self.db.set_pipeline_step(self.sid, step, "ok", detail)
                 log.info("[%s] %s: %s", self.session["fecha"], step, detail)
             self.db.update_session(self.sid, estado="lista" if steps[-1] == "reportar" else "procesando")

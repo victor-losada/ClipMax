@@ -7,6 +7,7 @@ Comandos:
   exportar-paquete     genera el .md para pegar en claude.ai (modo manual)
   importar-respuesta   importa el JSON de claude.ai y renderiza
   prompt-maestro       imprime el prompt maestro con tu configuración
+  prompt-grok          imprime el prompt para que Grok investigue X del día
   doctor               verifica instalación (ffmpeg, whisper, API key, Kick…)
   descargar            baja whisper.cpp, modelos y (opcional) ffmpeg a bin/ y models/
   snapshot <slug>      captura un fotograma del directo (para calibrar la cámara)
@@ -166,6 +167,15 @@ def cmd_prompt(args) -> None:
     print(master_prompt(ConfigStore(args.config).get()))
 
 
+def cmd_prompt_grok(args) -> None:
+    from .prompts import grok_prompt
+    from .timeutil import today_str
+
+    _load_env()
+    cfg = ConfigStore(args.config).get()
+    print(grok_prompt(cfg, args.fecha or today_str(cfg)))
+
+
 def cmd_snapshot(args) -> None:
     from .config import get_streamer
     from .kick import KickClient
@@ -275,7 +285,17 @@ def cmd_demo(args) -> None:
     from .demo import run_demo
 
     _load_env()
-    run_demo(use_claude=args.con_claude, minutes=args.minutos)
+    if not (args.ver and args.sin_generar):
+        run_demo(use_claude=args.con_claude, minutes=args.minutos)
+    if args.ver:
+        from .demo import DEMO_DIR
+
+        cfg_path = DEMO_DIR / "config_demo.yaml"
+        if not cfg_path.exists():
+            print("Todavía no hay demo generada: ejecuta `python arrancar.py demo --ver` sin --sin-generar.")
+            sys.exit(1)
+        print("Abriendo la demo en http://127.0.0.1:5001 (Ctrl+C para cerrar)")
+        cmd_web(argparse.Namespace(config=str(cfg_path), no_browser=False))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -320,6 +340,10 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("prompt-maestro", help="imprime el prompt maestro")
     p.set_defaults(func=cmd_prompt)
 
+    p = sub.add_parser("prompt-grok", help="imprime el prompt para que Grok investigue X del día")
+    p.add_argument("--fecha", help="AAAA-MM-DD (por defecto hoy)")
+    p.set_defaults(func=cmd_prompt_grok)
+
     p = sub.add_parser("doctor", help="verifica la instalación")
     p.add_argument("--sin-red", action="store_true", help="no consulta la API de Kick")
     p.set_defaults(func=cmd_doctor)
@@ -340,6 +364,8 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("demo", help="prueba completa con datos sintéticos")
     p.add_argument("--con-claude", action="store_true", help="usar la API real en vez de una decisión de ejemplo")
     p.add_argument("--minutos", type=float, default=6, help="minutos de video sintético por streamer")
+    p.add_argument("--ver", action="store_true", help="al terminar, abrir la demo en la web (puerto 5001)")
+    p.add_argument("--sin-generar", action="store_true", help="con --ver: abrir la última demo sin regenerarla")
     p.set_defaults(func=cmd_demo)
 
     args = parser.parse_args(argv)

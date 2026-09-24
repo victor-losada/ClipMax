@@ -89,16 +89,15 @@ Doble clic en **`iniciar.bat`**. Se abre el navegador en http://127.0.0.1:5000
 
 ## 6. Probar sin esperar al evento
 
-```bat
-python -m clipmax demo
-```
-Genera dos streams sintéticos con chat, menciones y chipeo, y produce un resumen, clips de TikTok y el reporte en `data_demo\sesiones\<fecha>\`. No gasta API. Con `--con-claude` usa la API real (unos centavos).
+Doble clic en **`demo.bat`** (o `python arrancar.py demo --ver`). Genera dos streams sintéticos con chat, menciones y chipeo, arma el resumen, los clips de TikTok y el reporte, y abre la demo en **http://127.0.0.1:5001**. No gasta API. Con `--con-claude` usa la API real (unos centavos).
+
+La demo vive aparte (`data_demo\`, su propia base de datos y el puerto 5001), así que **no aparece en la web normal** (puerto 5000) ni se mezcla con tus grabaciones reales. El video de la demo son barras de colores porque la fuente es un patrón de prueba; con streams reales se ve la imagen del directo.
 
 ## 7. Día del evento
 
 - Deja **`iniciar.bat` abierto** (puedes minimizarlo). A las 15:00 empieza a grabar solo y al cierre procesa todo.
 - ClipMax impide que Windows entre en suspensión mientras graba (la pantalla sí puede apagarse). Revisa además que el plan de energía no apague los discos.
-- Durante el día puedes pegar posts de X en **Sesiones → hoy → Contexto de X**.
+- Contexto de X del día: **Sesiones → Sesión de hoy → Copiar prompt para Grok**, pégalo en Grok y pega su respuesta en la misma caja. Detalle en [CONTEXTO_X.md](CONTEXTO_X.md).
 - Si cierras ClipMax a mitad del evento y lo vuelves a abrir dentro del horario, retoma la grabación.
 - Resultados en `data\sesiones\<fecha>\`:
   - `resumen_<fecha>.mp4`: el video de 10–20 min.

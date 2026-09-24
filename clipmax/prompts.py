@@ -99,6 +99,38 @@ def master_prompt(cfg: dict) -> str:
     return text
 
 
+GROK_PROMPT_PATH = PROJECT_ROOT / "prompts" / "grok_contexto_x.md"
+
+
+def grok_prompt(cfg: dict, fecha: str) -> str:
+    """Prompt para que Grok (u otro chat con acceso a X) investigue el día; su salida se pega en ClipMax."""
+    from datetime import date
+
+    from .timeutil import local_dt, session_window
+
+    start, end = session_window(cfg, date.fromisoformat(fecha))
+    zona = cfg["evento"]["zona_horaria"]
+    desde = local_dt(start - 3600, cfg).strftime("%H:%M")
+    hasta = local_dt(end, cfg).strftime("%H:%M")
+    pair = pair_slugs(cfg) + ["", ""]
+    others = [f"{s['nombre']} (kick.com/{s['slug']})" for s in cfg["streamers"]
+              if s["activo"] and s["slug"] not in pair]
+    cuentas = ", ".join(f"@{c}" for c in cfg["x"].get("cuentas") or []) or \
+        f"las cuentas oficiales del {cfg['evento']['nombre']} y de su organizador"
+    values = {
+        "evento": cfg["evento"]["nombre"],
+        "ventana": f"el {fecha}, desde las {desde} hasta las {hasta} ({zona}), o hasta ahora si aún no termina",
+        "pareja_a": streamer_name(cfg, pair[0]) if pair[0] else "el streamer principal",
+        "pareja_b": streamer_name(cfg, pair[1]) if pair[1] else "su rival",
+        "streamers": ", ".join(others) or "el resto de participantes",
+        "cuentas": cuentas,
+    }
+    text = GROK_PROMPT_PATH.read_text(encoding="utf-8")
+    for key, val in values.items():
+        text = text.replace("{{" + key + "}}", val)
+    return text
+
+
 def candidates_path(cfg: dict, fecha: str) -> Path:
     d = session_dir(cfg, fecha) / "claude"
     d.mkdir(exist_ok=True)
