@@ -186,7 +186,8 @@ def cmd_descargar(args) -> None:
 
     # `--modelo` sin valores = ningún modelo (útil para bajar solo ffmpeg).
     models = ["base", "small"] if args.modelo is None else args.modelo
-    run(models, args.ffmpeg, args.cuda, args.vad, args.sin_whisper)
+    if not run(models, args.ffmpeg, args.cuda, args.vad, args.sin_whisper, args.forzar):
+        sys.exit(1)
 
 
 def cmd_doctor(args) -> None:
@@ -284,6 +285,9 @@ def main(argv: list[str] | None = None) -> None:
                 stream.reconfigure(errors="replace")
             except (ValueError, OSError):
                 pass
+    from .netssl import configure_ssl
+
+    configure_ssl()  # certificados HTTPS de Windows (ver netssl.py) antes de cualquier conexión
     parser = argparse.ArgumentParser(prog="python -m clipmax", description="ClipMax · clips del Desafío 4 en Kick")
     parser.add_argument("--config", help="ruta a config.yaml (por defecto, el de la raíz del proyecto)")
     sub = parser.add_subparsers(dest="cmd")
@@ -326,6 +330,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--cuda", action="store_true", help="whisper con GPU NVIDIA (CUDA 12)")
     p.add_argument("--vad", action="store_true", help="modelo VAD Silero (mejores cortes de voz)")
     p.add_argument("--sin-whisper", action="store_true", help="solo modelos / ffmpeg")
+    p.add_argument("--forzar", action="store_true", help="reinstalar whisper.cpp aunque ya exista")
     p.set_defaults(func=cmd_descargar)
 
     p = sub.add_parser("snapshot", help="captura del directo para calibrar la cámara")
