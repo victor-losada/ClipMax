@@ -164,7 +164,11 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
         text = (request.get_json(silent=True) or {}).get("texto", "")
         n = xcontext.save_manual_context(db, s, text)
         kw = xcontext.keywords([p["texto"] for p in db.x_posts(s["id"])])
-        return jsonify({"ok": True, "posts": n, "temas": kw[:15]})
+        # Si el post-proceso estaba esperando este contexto (x.esperar_contexto), continúa solo.
+        resumed = False
+        if text.strip() and s["estado"] == "esperando_contexto":
+            resumed = pipeline.run_async(store.get(), db, db.get_session(s["id"]), "decidir", "reportar")
+        return jsonify({"ok": True, "posts": n, "temas": kw[:15], "reanudado": resumed})
 
     @app.post("/api/sesion/<fecha>/exportar")
     def api_export(fecha: str):
@@ -192,6 +196,12 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
     @app.get("/api/prompt-maestro")
     def api_master_prompt():
         return jsonify({"texto": prompts.master_prompt(store.get())})
+
+    @app.get("/api/prompt-grok/<fecha>")
+    def api_grok_prompt(fecha: str):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", fecha):
+            return _err("fecha inválida (usa AAAA-MM-DD)")
+        return jsonify({"texto": prompts.grok_prompt(store.get(), fecha)})
 
     # ------------------------------------------------------------------ API: configuración
     @app.post("/api/config")

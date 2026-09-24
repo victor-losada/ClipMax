@@ -47,7 +47,9 @@
   <div>
     <h2>Contexto de X del día</h2>
     <div class="card">
-      <p class="small mut">Pega posts o hilos de X sobre el evento (un post por bloque, separados por una línea en blanco). Si copias el enlace del post, se guarda el autor.</p>
+      {% if s.estado == 'esperando_contexto' %}<p style="color:var(--warn)"><b>El procesamiento está esperando este contexto.</b> Al guardarlo, sigue solo.</p>{% endif %}
+      <p class="small mut">1) Copia el prompt y pégalo en Grok (o en Claude con búsqueda web). 2) Pega aquí su respuesta completa, o posts sueltos de X (uno por bloque, separados por una línea en blanco). Puedes pegarlo varias veces en el día: cada vez reemplaza lo anterior.</p>
+      <div class="row" style="margin-bottom:8px"><button class="sec" onclick="copiarGrok()">Copiar prompt para Grok</button></div>
       <textarea id="xtext" placeholder="@usuario: Westcol le respondió a Gear en pleno directo…">{{ s.x_contexto }}</textarea>
       <div class="row" style="margin-top:8px"><button onclick="guardarX()">Guardar contexto</button>
         <span class="small mut" id="xinfo">{{ x_posts|length }} posts guardados</span></div>
@@ -89,11 +91,16 @@ async function guardarX() {
     const r = await api(`/api/sesion/${FECHA}/x`, { texto: document.getElementById("xtext").value });
     document.getElementById("xinfo").textContent = `${r.posts} posts guardados`;
     document.getElementById("xtemas").innerHTML = "Temas: " + r.temas.map(([k, n]) => `${esc(k)} (${n})`).join(", ");
-    toast("Contexto de X guardado");
+    toast(r.reanudado ? "Contexto guardado: el procesamiento continúa (mira el Panel)" : "Contexto de X guardado", 5000);
+    if (r.reanudado) setTimeout(() => location.reload(), 2500);
   } catch (e) { toast(e.message, 6000); }
 }
 async function exportar() {
   try { const r = await api(`/api/sesion/${FECHA}/exportar`, {}); await copyText(r.texto); toast(`Paquete ${r.archivo} copiado: pégalo en claude.ai`, 6000); }
+  catch (e) { toast(e.message, 6000); }
+}
+async function copiarGrok() {
+  try { const r = await api(`/api/prompt-grok/${FECHA}`); await copyText(r.texto); toast("Prompt copiado: pégalo en Grok y trae aquí su respuesta", 5000); }
   catch (e) { toast(e.message, 6000); }
 }
 async function copiarPrompt() { const r = await api("/api/prompt-maestro"); await copyText(r.texto); }

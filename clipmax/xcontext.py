@@ -68,7 +68,7 @@ def parse_manual_text(text: str) -> list[dict]:
         if status:
             autor, ext_id = "@" + status.group(1), "x" + status.group(2)
             url = f"https://x.com/{status.group(1)}/status/{status.group(2)}"
-        at = re.match(r"^(@\w{2,30})\s*[:\-–]\s*", block)
+        at = re.match(r"^(@\w{2,30})(?:\s*\([^)]{0,40}\))?\s*[:\-–]\s*", block)
         if at:
             autor = autor or at.group(1)
             block = block[at.end():]

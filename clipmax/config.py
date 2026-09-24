@@ -102,6 +102,11 @@ DEFAULTS: dict[str, Any] = {
         "max_consultas_dia": 8,
         "max_caracteres_contexto": 12000,
         "busquedas_web_max": 5,
+        # Si es true, el post-proceso se detiene antes de llamar a Claude hasta que pegues el
+        # contexto de X del día (p. ej. la salida de Grok); al pegarlo, continúa solo.
+        "esperar_contexto": False,
+        # Cuentas oficiales del evento (sin @) que el prompt para Grok manda revisar primero.
+        "cuentas": [],
     },
     "claude": {
         "modo": "api",                  # "api" o "manual" (pegar en claude.ai)
@@ -265,6 +270,11 @@ def validate(cfg: dict) -> dict:
         raise ConfigError("claude.modo debe ser 'api' o 'manual'")
     if cfg["claude"]["esfuerzo"] not in ("low", "medium", "high", "xhigh", "max"):
         raise ConfigError("claude.esfuerzo debe ser low, medium, high, xhigh o max")
+    cuentas = cfg["x"].get("cuentas") or []
+    if isinstance(cuentas, str):
+        cuentas = cuentas.split(",")
+    cfg["x"]["cuentas"] = [str(c).strip().lstrip("@") for c in cuentas if str(c).strip()]
+    cfg["x"]["esperar_contexto"] = bool(cfg["x"].get("esperar_contexto"))
     if cfg["x"]["modo"] not in ("manual", "api", "claude_web"):
         raise ConfigError("x.modo debe ser 'manual', 'api' o 'claude_web'")
     ed = cfg["edicion"]

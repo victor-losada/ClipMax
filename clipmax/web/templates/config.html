@@ -41,6 +41,9 @@
     <div class="row">
       <div><label>Modo</label><select id="x_modo"><option value="manual">Manual (pegar posts)</option><option value="api">API de X (token)</option><option value="claude_web">Búsqueda web de Claude</option></select></div>
     </div>
+    <label>Cuentas oficiales del evento en X (sin @, separadas por coma; las usa el prompt para Grok)</label>
+    <input id="x_cuentas" style="width:100%" placeholder="dedreviil, dedsafio">
+    <label class="row"><input type="checkbox" id="x_esperar"> Antes de llamar a Claude, esperar a que pegue el contexto de X del día</label>
     <label>Consulta (modo API)</label><input id="x_consulta" style="width:100%">
     <h3>Edición</h3>
     <div class="row">
@@ -83,6 +86,7 @@ function fill() {
   $("ev_dias").innerHTML = DIAS.map(d => `<label class="row" style="margin:0"><input type="checkbox" value="${d}" ${ev.dias_activos.includes(d) ? "checked" : ""}> ${d}</label>`).join("");
   $("cl_modo").value = cl.modo; $("cl_modelo").value = cl.modelo; $("cl_esf").value = cl.esfuerzo; $("cl_pres").value = cl.presupuesto_mensual_usd;
   $("x_modo").value = CFG.x.modo; $("x_consulta").value = CFG.x.consulta;
+  $("x_cuentas").value = (CFG.x.cuentas || []).join(", "); $("x_esperar").checked = !!CFG.x.esperar_contexto;
   $("ed_formato").value = ed.formato; $("ed_narr").value = ed.narracion; $("ed_codec").value = ed.codec;
   $("ed_res").value = (Math.max(ed.ancho, ed.alto) >= 1920) ? "1920x1080" : "1280x720";
   $("ed_min").value = ed.duracion_min_min; $("ed_max").value = ed.duracion_max_min; $("ed_sil").value = ed.silencio_max_s;
@@ -130,7 +134,9 @@ async function save() {
   ev.pareja_principal = [$("ev_p1").value, $("ev_p2").value].filter(Boolean);
   Object.assign(cfg.claude, { modo: $("cl_modo").value, modelo: $("cl_modelo").value.trim(), esfuerzo: $("cl_esf").value,
                               presupuesto_mensual_usd: parseFloat($("cl_pres").value) });
-  Object.assign(cfg.x, { modo: $("x_modo").value, consulta: $("x_consulta").value });
+  Object.assign(cfg.x, { modo: $("x_modo").value, consulta: $("x_consulta").value,
+    cuentas: $("x_cuentas").value.split(",").map(c => c.trim().replace(/^@/, "")).filter(Boolean),
+    esperar_contexto: $("x_esperar").checked });
   const [w, h] = $("ed_res").value.split("x").map(Number);
   const vertical = $("ed_formato").value === "vertical";
   Object.assign(cfg.edicion, { formato: $("ed_formato").value, narracion: $("ed_narr").value, codec: $("ed_codec").value,

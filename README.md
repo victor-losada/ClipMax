@@ -24,6 +24,7 @@ Guía completa: [docs/INSTALACION_WINDOWS.md](docs/INSTALACION_WINDOWS.md)
 - [Arquitectura y plan de implementación](docs/ARQUITECTURA.md): módulos, algoritmo de detección, costos, decisiones y riesgos.
 - [Instalación paso a paso en Windows](docs/INSTALACION_WINDOWS.md)
 - [Prompt maestro y flujo diario con claude.ai](docs/PROMPT_MAESTRO.md). El prompt está en [`prompts/prompt_maestro.md`](prompts/prompt_maestro.md).
+- [Contexto del día desde X (Grok, pegar, cuándo)](docs/CONTEXTO_X.md)
 - [Configuración de ejemplo comentada](config.example.yaml)
 
 ## Estructura
@@ -50,7 +51,7 @@ clipmax/
   demo.py          demo de punta a punta con datos sintéticos
 prompts/prompt_maestro.md
 arrancar.py        lanzador de los .bat (verifica la carpeta clipmax y ejecuta python -m clipmax)
-tests/             50 pruebas (incluye grabación y render reales con ffmpeg)
+tests/             62 pruebas (incluye grabación y render reales con ffmpeg)
 ```
 
 ## Pruebas
