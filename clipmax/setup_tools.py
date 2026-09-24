@@ -11,7 +11,9 @@ import json
 import logging
 import re
 import shutil
+import ssl
 import sys
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -31,12 +33,40 @@ MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{nam
 VAD_URL = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin"
 
 
+class DownloadError(RuntimeError):
+    def __init__(self, url: str, dest: Path, reason: str):
+        super().__init__(reason)
+        self.url, self.dest, self.reason = url, dest, reason
+
+
+def _is_cert_error(exc: BaseException) -> bool:
+    reason = getattr(exc, "reason", exc)
+    return isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(exc)
+
+
 def _download(url: str, dest: Path) -> Path:
+    """Descarga con barra de progreso. Si falla el certificado, reintenta con las raíces de certifi."""
+    from .netssl import certifi_context
+
+    try:
+        return _fetch(url, dest, None)
+    except (urllib.error.URLError, ssl.SSLError, OSError) as exc:
+        if _is_cert_error(exc):
+            print("  Certificado no verificado con el almacén de Windows; reintento con certifi…")
+            try:
+                return _fetch(url, dest, certifi_context())
+            except (urllib.error.URLError, ssl.SSLError, OSError) as exc2:
+                exc = exc2
+        dest.with_suffix(dest.suffix + ".part").unlink(missing_ok=True)
+        raise DownloadError(url, dest, str(getattr(exc, "reason", exc))) from exc
+
+
+def _fetch(url: str, dest: Path, context) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
     print(f"Descargando {url}")
     req = urllib.request.Request(url, headers={"User-Agent": "ClipMax/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as resp, open(tmp, "wb") as fh:
+    with urllib.request.urlopen(req, timeout=60, context=context) as resp, open(tmp, "wb") as fh:
         total = int(resp.headers.get("Content-Length") or 0)
         done = 0
         while True:
@@ -80,8 +110,12 @@ def _whisper_asset_url(cuda: bool) -> str:
     return WHISPER_FALLBACK.format(asset="whisper-cublas-12.4.0-bin-x64.zip" if cuda else "whisper-bin-x64.zip")
 
 
-def install_whisper(cuda: bool = False) -> None:
+def install_whisper(cuda: bool = False, force: bool = False) -> None:
     target = BIN / "whisper"
+    existing = list(target.glob("**/whisper-cli.exe")) or list(target.glob("**/whisper-cli"))
+    if existing and not force:
+        print(f"Ya existe whisper-cli: {existing[0]} (usa --forzar para reinstalar)")
+        return
     if target.exists():
         shutil.rmtree(target)
     z = _download(_whisper_asset_url(cuda), BIN / "whisper.zip")
@@ -114,15 +148,33 @@ def install_ffmpeg() -> None:
     print("ffmpeg:", found[0] if found else "NO ENCONTRADO (revisa bin/ffmpeg)")
 
 
-def run(models: list[str], ffmpeg: bool, cuda: bool, vad: bool, skip_whisper: bool) -> None:
+def run(models: list[str], ffmpeg: bool, cuda: bool, vad: bool, skip_whisper: bool,
+        force: bool = False) -> bool:
+    """Descarga todo lo pedido. Un fallo no detiene el resto; al final se resume. True = todo bien."""
     if sys.platform != "win32" and not skip_whisper:
         print("Aviso: los binarios que se descargan son para Windows x64. En Linux/macOS compila whisper.cpp.")
+    jobs = []
     if not skip_whisper:
-        install_whisper(cuda)
-    for m in models:
-        install_model(m)
+        jobs.append(lambda: install_whisper(cuda, force))
+    jobs += [(lambda m=m: install_model(m)) for m in models]
     if vad:
-        install_vad()
+        jobs.append(install_vad)
     if ffmpeg:
-        install_ffmpeg()
-    print("Listo. Ejecuta `python -m clipmax doctor` para verificar.")
+        jobs.append(install_ffmpeg)
+    failed: list[DownloadError] = []
+    for job in jobs:
+        try:
+            job()
+        except DownloadError as exc:
+            print(f"  ERROR: {exc.reason}")
+            failed.append(exc)
+    if not failed:
+        print("Listo. Ejecuta `python arrancar.py doctor` para verificar.")
+        return True
+    print("\n" + "=" * 70)
+    print(f" {len(failed)} descarga(s) fallaron. Puedes bajarlas con el navegador y guardarlas así:")
+    for exc in failed:
+        print(f"   {exc.url}\n     -> guardar como: {exc.dest}")
+    print(" Luego ejecuta de nuevo instalar.bat (lo que ya está descargado no se repite).")
+    print("=" * 70)
+    return False

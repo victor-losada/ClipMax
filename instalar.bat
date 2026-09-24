@@ -34,14 +34,21 @@ if errorlevel 1 (
 
 echo.
 echo Descargando whisper.cpp y modelos base + small ^(~650 MB^)...
+set CLIPMAX_FALLO=
 python arrancar.py descargar --modelo base small
+if errorlevel 1 set CLIPMAX_FALLO=1
 
 if not exist config.yaml copy config.example.yaml config.yaml >nul
 if not exist .env copy .env.example .env >nul
 
 echo.
 echo ============================================================
-echo  Listo. Pasos siguientes:
+if defined CLIPMAX_FALLO (
+  echo  ATENCION: algunas descargas fallaron. Mira el resumen de arriba:
+  echo  bajalas con el navegador o vuelve a ejecutar instalar.bat.
+  echo ============================================================
+)
+echo  Pasos siguientes:
 echo   1. Abre .env y pega tu ANTHROPIC_API_KEY ^(o usa modo manual^)
 echo   2. Ejecuta iniciar.bat y configura streamers en el navegador
 echo   3. Si instalaste ffmpeg con winget, cierra y abre la consola

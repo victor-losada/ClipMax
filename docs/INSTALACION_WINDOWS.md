@@ -135,6 +135,7 @@ Con decenas de streamers, graba a la pareja principal en 720p y desactiva a los 
 | Síntoma | Solución |
 |---|---|
 | `No module named clipmax` | La carpeta del código debe llamarse `clipmax` **en minúsculas** y estar en `C:\ClipMax\clipmax\__main__.py`. Windows no distingue mayúsculas, pero Python sí. `instalar.bat` e `iniciar.bat` (vía `arrancar.py`) la renombran solos; a mano: `ren ClipMax clipmax_tmp` y luego `ren clipmax_tmp clipmax`. |
+| `CERTIFICATE_VERIFY_FAILED` / `unable to get local issuer certificate` | Windows (sobre todo servidores recién instalados) no tiene aún el certificado raíz del sitio y Python no lo descarga solo. ClipMax usa `truststore` (valida como el navegador) y, si no alcanza, reintenta con `certifi`. Si una descarga sigue fallando, el instalador muestra el enlace y la ruta exacta para bajarla con el navegador. |
 | `Kick respondió 403` | Actualiza: `pip install -U "yt-dlp[default,curl-cffi]"`. Revisa la VPN o el firewall. |
 | El chat no conecta o marca 0 msg/min | Kick pudo cambiar la clave de Pusher: busca la nueva y agrégala en `chat.pusher_keys` (Configuración → YAML). También puedes fijar `chatroom_id` a mano. |
 | "No encuentro whisper-cli" | `python -m clipmax descargar` o descomprime el zip en `bin\whisper`. |

@@ -8,4 +8,6 @@ websocket-client>=1.8       # chat de Kick (Pusher)
 yt-dlp[default,curl-cffi]   # resolver streams de Kick (instala curl_cffi para pasar Cloudflare)
 tzdata>=2024.1              # zonas horarias en Windows (America/Bogota)
 python-dotenv>=1.0          # leer ANTHROPIC_API_KEY desde .env
+truststore>=0.10            # HTTPS con los certificados de Windows (evita CERTIFICATE_VERIFY_FAILED)
+certifi                     # raíces de Mozilla como respaldo
 pyttsx3>=2.90; sys_platform == "win32"   # narración opcional con voces SAPI de Windows
