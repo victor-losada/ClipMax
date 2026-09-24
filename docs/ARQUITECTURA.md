@@ -102,12 +102,32 @@ Con Opus 5 todos los días del mes se llega al tope; si el evento dura más de ~
 
 ## 6. Edición
 
-Por cada clip, **una sola pasada de ffmpeg**: `-ss/-t` sobre el MP4 del streamer → `trim/atrim` por cada tramo con voz (los huecos sin voz de más de 2.5 s se eliminan según la transcripción) → `concat` → encuadre → título → `loudnorm` (todos suenan igual de fuerte) → fundidos de 40 ms en cada corte (sin "clics"). Los cortes de Claude se ajustan al límite de la frase más cercana para no cortar palabras.
+Por cada clip hay **una sola pasada de ffmpeg**:
+
+1. `-ss/-t` sobre el MP4 del streamer.
+2. `trim/atrim` de cada tramo con voz. Los huecos sin voz de más de 2.5 s se eliminan según la transcripción, salvo que recortar deje menos del 25 % del clip: eso es un momento visual o de pura reacción y se deja entero.
+3. `concat` de los tramos.
+4. Encuadre según el modo del streamer.
+5. Efectos (ver abajo).
+6. `loudnorm` (todos suenan igual de fuerte) y fundidos de 40 ms en cada corte, para que no haya clics.
+
+Los cortes de Claude se ajustan al límite de la frase más cercana para no cortar palabras.
 
 **Encuadre según el modo:**
 - `juego_cara` + horizontal: stream completo.
 - `cara`: solo el recuadro de la cámara (se marca una vez con el mouse en la web), ampliado con fondo desenfocado.
 - Formato vertical (TikTok) con cámara definida: cámara arriba y juego abajo.
+
+**Efectos** (`clipmax/effects.py`, se activan y desactivan en Configuración → Efectos):
+
+| Efecto | Cómo funciona |
+|---|---|
+| Subtítulos dinámicos | 2-4 palabras en mayúsculas; la que se está diciendo se ilumina en verde con un pequeño "pop". Tiempos por palabra de whisper (`-ojf`) o, si no los hay, estimados dentro de la frase. Se remapean a la línea de tiempo ya sin silencios. Archivo ASS dibujado por libass. |
+| Zoom suave | Acercamiento del 12 % en el `momento_clave` que marca Claude (o en el pico de chat si no marcó ninguno), con entrada y salida de 0.35 s. |
+| Pantalla dividida | Cuando Claude pone `pantalla_dividida_con`, el mismo instante de otro streamer (el "mismo suceso") se ve a la par: lado a lado en horizontal, arriba/abajo en vertical, con el nombre de cada uno. Se escucha solo el audio del clip principal (los dos juntos harían eco si están en llamada). |
+| Efectos de sonido | Pocos: los que Claude elige para el remate (`boom`, `ding`, `impacto`, `pop` o los tuyos en `sfx/`) y un `whoosh` suave al pasar de una tarjeta a un clip, con tope por video (`sfx_max_por_video`). Los incluidos se generan con ffmpeg: no tienen derechos de autor. |
+
+Sin música, a propósito: da problemas de copyright en TikTok y YouTube. Si un efecto hace fallar a ffmpeg, ese clip se vuelve a renderizar sin efectos: un efecto nunca tumba el video del día.
 
 Las narraciones son tarjetas con el fotograma del clip siguiente desenfocado, y opcionalmente voz local. Todas las piezas se codifican con los mismos parámetros y se unen sin recodificar.
 

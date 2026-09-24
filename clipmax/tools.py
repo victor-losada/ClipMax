@@ -87,7 +87,8 @@ def ytdlp_cmd() -> list[str]:
 
 
 def run(cmd: list[str], timeout: float | None = None, check: bool = True,
-        capture: bool = True, input_bytes: bytes | None = None) -> subprocess.CompletedProcess:
+        capture: bool = True, input_bytes: bytes | None = None,
+        cwd: str | Path | None = None) -> subprocess.CompletedProcess:
     """subprocess.run sin ventana de consola en Windows y con log de errores legible."""
     log.debug("Ejecutando: %s", " ".join(map(str, cmd)))
     proc = subprocess.run(
@@ -97,6 +98,7 @@ def run(cmd: list[str], timeout: float | None = None, check: bool = True,
         stderr=subprocess.PIPE if capture else None,
         timeout=timeout,
         creationflags=POPEN_FLAGS,
+        cwd=str(cwd) if cwd else None,
     )
     if check and proc.returncode != 0:
         err = (proc.stderr or b"").decode("utf-8", "replace")[-2000:]

@@ -58,6 +58,13 @@
       <div><label>Silencio máx. (s)</label><input id="ed_sil" type="number" step="0.5" min="0.5" style="width:80px"></div>
     </div>
     <label class="row"><input type="checkbox" id="ed_tiktok"> Exportar clips verticales para TikTok de los mejores momentos</label>
+    <h3>Efectos</h3>
+    <label class="row"><input type="checkbox" id="fx_subs"> Subtítulos dinámicos (la palabra que se dice se ilumina)
+      <select id="fx_palabras" style="margin-left:6px"><option value="2">2 palabras</option><option value="3">3 palabras</option><option value="4">4 palabras</option></select></label>
+    <label class="row"><input type="checkbox" id="fx_zoom"> Zoom suave en el remate</label>
+    <label class="row"><input type="checkbox" id="fx_split"> Pantalla dividida cuando Claude muestra a los dos streamers a la vez</label>
+    <label class="row"><input type="checkbox" id="fx_sfx"> Efectos de sonido · máximo <input id="fx_max" type="number" min="0" max="40" style="width:60px"> por video</label>
+    <p class="small mut">Tus propios efectos: pon archivos .wav/.mp3 en la carpeta <code>sfx/</code> del proyecto; el nombre del archivo es el nombre que Claude puede usar.</p>
     <label>Calidad máxima de grabación</label>
     <select id="gr_calidad"><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select>
   </div>
@@ -90,7 +97,10 @@ function fill() {
   $("ed_formato").value = ed.formato; $("ed_narr").value = ed.narracion; $("ed_codec").value = ed.codec;
   $("ed_res").value = (Math.max(ed.ancho, ed.alto) >= 1920) ? "1920x1080" : "1280x720";
   $("ed_min").value = ed.duracion_min_min; $("ed_max").value = ed.duracion_max_min; $("ed_sil").value = ed.silencio_max_s;
-  $("ed_tiktok").checked = ed.exportar_clips_tiktok; $("gr_calidad").value = String(CFG.grabacion.calidad_max);
+  $("ed_tiktok").checked = ed.exportar_clips_tiktok;
+  $("fx_subs").checked = ed.subtitulos; $("fx_palabras").value = String(ed.subtitulos_palabras);
+  $("fx_zoom").checked = ed.zoom; $("fx_split").checked = ed.pantalla_dividida;
+  $("fx_sfx").checked = ed.efectos_sonido; $("fx_max").value = ed.sfx_max_por_video; $("gr_calidad").value = String(CFG.grabacion.calidad_max);
   CFG.streamers.forEach(s => addRow(s));
   pairOptions();
 }
@@ -142,7 +152,10 @@ async function save() {
   Object.assign(cfg.edicion, { formato: $("ed_formato").value, narracion: $("ed_narr").value, codec: $("ed_codec").value,
     ancho: vertical ? h : w, alto: vertical ? w : h, duracion_min_min: parseFloat($("ed_min").value),
     duracion_max_min: parseFloat($("ed_max").value), silencio_max_s: parseFloat($("ed_sil").value),
-    exportar_clips_tiktok: $("ed_tiktok").checked });
+    exportar_clips_tiktok: $("ed_tiktok").checked,
+    subtitulos: $("fx_subs").checked, subtitulos_palabras: parseInt($("fx_palabras").value),
+    zoom: $("fx_zoom").checked, pantalla_dividida: $("fx_split").checked,
+    efectos_sonido: $("fx_sfx").checked, sfx_max_por_video: parseInt($("fx_max").value || "0") });
   cfg.grabacion.calidad_max = parseInt($("gr_calidad").value);
   cfg.streamers = [...$("tbl").querySelectorAll("tr")].map(tr => ({
     ...JSON.parse(tr.dataset.extra || "{}"),

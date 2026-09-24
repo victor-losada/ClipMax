@@ -152,6 +152,18 @@ edicion:
   fuente: ""                  # ruta a un .ttf; vacío = Segoe UI Bold / Arial Bold
   exportar_clips_tiktok: true # un clip vertical por cada "mejor momento"
   titulos_en_pantalla: true
+  # Efectos
+  subtitulos: true            # subtítulos dinámicos: la palabra que se dice se ilumina
+  subtitulos_palabras: 3      # palabras visibles a la vez (2-4)
+  subtitulos_fuente: ""       # .ttf; vacío = Arial Black / Impact / Segoe UI Black
+  zoom: true                  # zoom suave en el remate que marca Claude
+  zoom_factor: 1.12
+  zoom_auto: true             # si Claude no marca remate, usar el pico de chat
+  pantalla_dividida: true     # los dos streamers a la par cuando Claude lo pide
+  efectos_sonido: true        # boom/ding/impacto/pop/whoosh + los tuyos en la carpeta sfx/
+  sfx_volumen: 0.55
+  sfx_transicion: "whoosh"    # sonido al entrar a un clip después de una tarjeta ("" = ninguno)
+  sfx_max_por_video: 10       # "uno que otro": tope de efectos en todo el resumen
 
 web:
   host: "127.0.0.1"

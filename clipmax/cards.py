@@ -152,3 +152,26 @@ def render_lower_third(title: str, streamer: str, size: tuple[int, int], out_png
     out_png.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_png)
     return out_png
+
+
+def render_split_tags(main: str, partner: str, size: tuple[int, int], out_png: Path,
+                      font_path: str = "") -> Path:
+    """Nombre de cada streamer en su mitad de la pantalla dividida."""
+    w, h = size
+    vertical = h > w
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    base = min(w, h)
+    font = _font(font_path, int(base * 0.038))
+    pad = int(base * 0.018)
+    origins = [(pad, pad), (pad, h // 2 + pad)] if vertical else [(pad, pad), (w // 2 + pad, pad)]
+    for (x, y), name in zip(origins, (main, partner)):
+        label = _strip_unrenderable(name).upper()
+        tw = draw.textlength(label, font=font)
+        box = (x, y, x + int(tw) + 2 * pad, y + int(base * 0.038 * 1.2) + pad)
+        draw.rounded_rectangle(box, radius=pad // 2, fill=(0, 0, 0, 170))
+        draw.rectangle((x, y, x + max(3, pad // 3), box[3]), fill=(*ACCENT, 255))
+        draw.text((x + pad, y + pad // 3), label, font=font, fill=(255, 255, 255, 255))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_png)
+    return out_png

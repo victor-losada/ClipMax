@@ -122,18 +122,26 @@ def _synthetic_chat(db: Database, sid: int, slug: str, t0: float, minutes: float
 
 
 def _canned_decision(candidates: list[dict]) -> dict:
-    """Decisión de ejemplo (lo que haría Claude) para probar sin gastar API."""
+    """Decisión de ejemplo (lo que haría Claude) para probar sin gastar API, con efectos."""
     top = candidates[:4]
+    sfx = ["boom", "ding", "impacto", ""]
     guion = [{"tipo": "narracion", "texto": "Día de prueba en el Desafío: el chipeo entre Westcol y Gear of Nos no tardó en llegar.",
-              "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 5, "motivo": "gancho"}]
+              "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 5, "motivo": "gancho",
+              "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0}]
     for i, c in enumerate(top, 1):
+        inicio, fin = 3.0, min(c["duracion"] - 1, 55.0)
+        # Remate: la primera frase transcrita dentro del corte.
+        lines = [a for a, _b, _t in c.get("transcripcion", []) if inicio + 1 < a < fin - 1]
         guion.append({"tipo": "narracion", "texto": f"Mientras tanto, en el stream de {c['nombre']}…",
-                      "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 3, "motivo": ""})
-        guion.append({"tipo": "clip", "texto": "", "candidato_id": c["id"], "inicio": 3.0,
-                      "fin": min(c["duracion"] - 1, 55.0), "titulo_en_pantalla": f"MOMENTO {i}",
-                      "prioridad": 5 - min(i, 4), "motivo": c["por_que"]})
+                      "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 3, "motivo": "",
+                      "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0})
+        guion.append({"tipo": "clip", "texto": "", "candidato_id": c["id"], "inicio": inicio, "fin": fin,
+                      "titulo_en_pantalla": f"MOMENTO {i}", "prioridad": 5 - min(i, 4), "motivo": c["por_que"],
+                      "momento_clave": (lines[0] + 1.0) if lines else 0, "efecto_sonido": sfx[i - 1] if lines else "",
+                      "pantalla_dividida_con": (c.get("mismo_suceso") or [0])[0] if i == 1 else 0})
     guion.append({"tipo": "narracion", "texto": "¿Cumplirá Gear su amenaza de quemar la base? Mañana lo sabremos.",
-                  "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 5, "motivo": "cierre"})
+                  "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 5, "motivo": "cierre",
+                  "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0})
     mejores = [{"candidato_id": c["id"], "inicio": 3.0, "fin": min(c["duracion"] - 1, 45.0),
                 "titulo": f"Chipeo #{i}", "por_que_importa": "Ejemplo generado por la demo.",
                 "captions_tiktok": ["Westcol no se aguantó 😂", "Gear lo dijo en vivo 👀", "Esto no termina aquí"],
@@ -176,7 +184,7 @@ def run_demo(use_claude: bool = False, minutes: float = 6.0) -> None:
     _synthetic_chat(db, sid, "gearofnos", t0, minutes, [2.2, 4.1], "westcol", "westcol", rnd)
     matcher = MentionMatcher(cfg["streamers"])
     for slug in ("westcol", "gearofnos"):
-        segs = [(t0 + m * 60, t0 + m * 60 + 5.5, txt) for m, s, txt in DIALOGO if s == slug]
+        segs = [(t0 + m * 60, t0 + m * 60 + 4.0, txt) for m, s, txt in DIALOGO if s == slug]
         db.add_segments(sid, slug, segs, "vivo")
         mention_signals_from_segments(db, sid, slug, segs, matcher)
     xcontext.save_manual_context(db, session, (

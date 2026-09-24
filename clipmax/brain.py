@@ -302,8 +302,11 @@ def _num(v, default=0.0) -> float:
 
 def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dict, list[str]]:
     """Normaliza la decisión, recorta tiempos al rango de cada candidato y ajusta la duración."""
+    from .effects import sfx_names
+
     warnings: list[str] = []
     by_id = {int(c["id"]): c for c in candidates}
+    sfx_available = set(sfx_names(cfg))
     guion = []
     for i, item in enumerate(raw.get("guion") or []):
         tipo = str(item.get("tipo", "")).lower()
@@ -325,11 +328,26 @@ def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dic
         if b - a < 2.0:
             warnings.append(f"guion[{i}]: corte de {b - a:.1f}s demasiado corto; se omite")
             continue
+        # Efectos: el remate debe caer dentro del corte; el sonido debe existir; la pantalla
+        # dividida solo con otro streamer que se solape en el tiempo (el "mismo suceso").
+        mom = _num(item.get("momento_clave"))
+        mom = round(mom, 2) if a <= mom <= b else 0.0
+        sfx = str(item.get("efecto_sonido") or "").strip().lower()
+        if sfx and sfx not in sfx_available:
+            warnings.append(f"guion[{i}]: efecto de sonido desconocido {sfx!r}; se omite")
+            sfx = ""
+        split = int(_num(item.get("pantalla_dividida_con"), 0))
+        other = by_id.get(split)
+        if split and not (other and other["slug"] != cand["slug"]
+                          and min(other["end_ts"], cand["start_ts"] + b) - max(other["start_ts"], cand["start_ts"] + a) >= 10):
+            warnings.append(f"guion[{i}]: pantalla dividida con {split} no aplica (no es el mismo suceso)")
+            split = 0
         guion.append({
             "tipo": "clip", "candidato_id": cid, "inicio": round(a, 2), "fin": round(b, 2),
             "titulo_en_pantalla": str(item.get("titulo_en_pantalla") or "").strip()[:60],
             "prioridad": int(min(5, max(1, _num(item.get("prioridad"), 3)))),
             "motivo": str(item.get("motivo") or ""),
+            "momento_clave": mom, "efecto_sonido": sfx, "pantalla_dividida_con": split,
         })
     if not any(g["tipo"] == "clip" for g in guion):
         raise ClaudeError("La decisión no tiene ningún clip válido")

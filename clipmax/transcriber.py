@@ -16,7 +16,7 @@ import logging
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import tools
@@ -39,6 +39,7 @@ class Segment:
     start: float  # segundos relativos al inicio del audio transcrito
     end: float
     text: str
+    words: list = field(default_factory=list)  # [(inicio, fin, palabra)] relativos, si whisper los dio
 
 
 def clean_segments(segs: list[Segment]) -> list[Segment]:
@@ -54,20 +55,61 @@ def clean_segments(segs: list[Segment]) -> list[Segment]:
                 continue
         else:
             repeat = 0
-        out.append(Segment(s.start, s.end, s.text.strip()))
+        out.append(Segment(s.start, s.end, s.text.strip(), s.words))
     return out
 
 
+def _fix(text: str) -> str:
+    """Texto leído con surrogateescape -> UTF-8 correcto (whisper parte tildes entre tokens)."""
+    return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+
+
+def _words_from_tokens(tokens: list, seg_start: float, seg_end: float) -> list[tuple[float, float, str]]:
+    """Agrupa los tokens de whisper (-ojf) en palabras con sus tiempos.
+
+    Un token que empieza con espacio abre palabra nueva; la puntuación se pega a la
+    palabra anterior. Los bytes se unen antes de decodificar, así una "á" partida en
+    dos tokens sale bien. Si los tiempos no son coherentes, se devuelve [] y luego se
+    estiman por proporción.
+    """
+    words: list[tuple[float, float, str]] = []
+    buf, w0, w1 = b"", None, None
+
+    def flush():
+        text = buf.decode("utf-8", "replace").strip()
+        if text and w0 is not None:
+            words.append((w0, max(w1, w0), text))
+
+    for tok in tokens or []:
+        raw = str(tok.get("text", ""))
+        if raw.startswith("[_") and raw.endswith("]"):  # [_BEG_], [_TT_123]: tokens especiales
+            continue
+        b = raw.encode("utf-8", "surrogateescape")
+        off = tok.get("offsets") or {}
+        t0, t1 = float(off.get("from", 0)) / 1000.0, float(off.get("to", 0)) / 1000.0
+        if b.startswith(b" ") or w0 is None:
+            flush()
+            buf, w0, w1 = b, t0, t1
+        else:
+            buf += b
+            w1 = t1
+    flush()
+    ok = bool(words) and all(seg_start - 1.0 <= a <= b <= seg_end + 1.0 for a, b, _ in words) \
+        and all(words[i][0] <= words[i + 1][0] + 0.05 for i in range(len(words) - 1)) \
+        and any(b > a for a, b, _ in words)
+    return words if ok else []
+
+
 def parse_whisper_json(raw: bytes) -> list[Segment]:
-    """Lee el JSON de `whisper-cli -oj`. Tolera UTF-8 cortado (pasa con emojis/tildes)."""
-    text = raw.decode("utf-8", "replace")
-    data = json.loads(text, strict=False)
+    """Lee el JSON de `whisper-cli -oj/-ojf`. Tolera UTF-8 cortado entre tokens."""
+    data = json.loads(raw.decode("utf-8", "surrogateescape"), strict=False)
     segs = []
     for item in data.get("transcription", []):
         off = item.get("offsets") or {}
         start = float(off.get("from", 0)) / 1000.0
-        end = float(off.get("to", 0)) / 1000.0
-        segs.append(Segment(start, max(end, start), str(item.get("text", "")).strip()))
+        end = max(start, float(off.get("to", 0)) / 1000.0)
+        words = _words_from_tokens(item.get("tokens"), start, end)
+        segs.append(Segment(start, end, _fix(str(item.get("text", ""))).strip(), words))
     return segs
 
 
@@ -98,7 +140,7 @@ class WhisperTranscriber:
         cmd = [
             tools.whisper_cli(self.cfg), "-m", str(self.model_path(which)), "-f", str(wav),
             "-l", self.tcfg["idioma"], "-t", str(int(self.tcfg["hilos"])),
-            "-oj", "-of", str(out_base), "-np",
+            "-oj", "-ojf", "-of", str(out_base), "-np",  # -ojf: tiempos por token -> subtítulos
         ]
         if self.tcfg.get("prompt_inicial"):
             cmd += ["--prompt", self.tcfg["prompt_inicial"]]
@@ -106,7 +148,17 @@ class WhisperTranscriber:
         if vad and resolve_path(vad).exists():
             cmd += ["--vad", "-vm", str(resolve_path(vad))]
         with self._lock:
-            tools.run(cmd, timeout=3600)
+            try:
+                tools.run(cmd, timeout=3600)
+            except RuntimeError as exc:
+                if "-ojf" not in cmd:
+                    raise
+                # whisper-cli antiguo sin tiempos por token: se transcribe igual y los subtítulos
+                # usan tiempos estimados por palabra.
+                log.warning("whisper-cli no aceptó -ojf (%s); reintento sin tiempos por palabra",
+                            str(exc).splitlines()[-1][:120] if str(exc) else exc)
+                cmd.remove("-ojf")
+                tools.run(cmd, timeout=3600)
         json_path = out_base.with_suffix(".json")
         try:
             return clean_segments(parse_whisper_json(json_path.read_bytes()))
@@ -121,11 +173,12 @@ class WhisperTranscriber:
 
 
 def mention_signals_from_segments(db: Database, session_id: int, slug: str,
-                                  segs_abs: list[tuple[float, float, str]],
+                                  segs_abs: list[tuple],
                                   matcher: MentionMatcher) -> int:
     """Crea señales 'mencion_voz' cuando un streamer nombra a otro en su audio."""
     n = 0
-    for start, _end, text in segs_abs:
+    for seg in segs_abs:
+        start, text = seg[0], seg[2]
         for target, count in matcher.find_others(text, slug, fuzzy=True).items():
             score = min(1.0, 0.6 + 0.2 * count)
             db.add_signal(session_id, slug, start, "mencion_voz", score,
@@ -200,7 +253,9 @@ class LiveTranscriber(threading.Thread):
             log.warning("[%s] fallo transcribiendo en vivo: %s", slug, exc)
             self._pos[pid] = pos + self.chunk
             return True
-        abs_segs = [(started + pos + s.start, started + pos + s.end, s.text) for s in segs if s.text]
+        base = started + pos
+        abs_segs = [(base + s.start, base + s.end, s.text, [[base + a, base + b, w] for a, b, w in s.words])
+                    for s in segs if s.text]
         if abs_segs:
             self.db.add_segments(self.session["id"], slug, abs_segs, "vivo")
             n = mention_signals_from_segments(self.db, self.session["id"], slug, abs_segs, self.matcher)
@@ -239,7 +294,8 @@ def transcribe_moments(cfg: dict, db: Database, session: dict, moments: list[dic
         except Exception as exc:  # noqa: BLE001
             log.warning("Fallo transcribiendo candidato %s: %s", m.get("rank"), exc)
             continue
-        abs_segs = [(wall0 + s.start, wall0 + s.end, s.text) for s in segs if s.text]
+        abs_segs = [(wall0 + s.start, wall0 + s.end, s.text, [[wall0 + a, wall0 + b, w] for a, b, w in s.words])
+                    for s in segs if s.text]
         db.delete_segments(session["id"], m["slug"], m["start_ts"] - 1, m["end_ts"] + 1, "candidato")
         db.add_segments(session["id"], m["slug"], abs_segs, "candidato")
         db.update_moment(m["id"], transcrito=1)

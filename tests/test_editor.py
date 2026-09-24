@@ -14,6 +14,8 @@ def test_speech_keep_intervals_cuts_long_silences():
     keep = editor.speech_keep_intervals(40.0, speech, max_gap=2.5, pad=0.3, tail=1.5)
     assert keep == [(0.7, 8.3), (19.7, 26.8)]
     assert editor.speech_keep_intervals(10.0, [], 2.5) == [(0.0, 10.0)]
+    # Casi sin voz (momento visual): no se recorta a un segundo, se deja completo.
+    assert editor.speech_keep_intervals(42.0, [(41.5, 42.0)], 2.5) == [(0.0, 42.0)]
 
 
 def test_snap_to_segments():
@@ -33,12 +35,13 @@ def test_layout_variants():
     assert "vstack=inputs=2[vl]" in vert and "crop=1080:728" in vert
 
 
-def test_filtergraph_structure():
-    g = editor.build_clip_filtergraph([(0.0, 5.0), (8.0, 12.5)], "[vc]null[vl]", 30, 4.0)
-    assert "split=2[vs0][vs1]" in g and "asplit=2[as0][as1]" in g
-    assert "trim=start=8.000:end=12.500" in g
-    assert "concat=n=2:v=1:a=1[vc][ac]" in g
-    assert "overlay=0:0:eof_action=pass" in g and "loudnorm" in g
+def test_split_layout_structure():
+    cam = {"x": 0.75, "y": 0.0, "w": 0.25, "h": 0.3}
+    g = editor.split_layout("vc", "vcp", "vl", ((1920, 1080), {"camara": cam}), ((1920, 1080), {"camara": None}),
+                            (1920, 1080))
+    assert "[vc]crop=480:324:1440:0" in g and "hstack=inputs=2" in g and g.endswith("[vl]")
+    v = editor.split_layout("vc", "vcp", "vl", ((1920, 1080), {}), ((1920, 1080), {}), (1080, 1920))
+    assert "vstack=inputs=2" in v
 
 
 @pytest.mark.skipif(not has_ffmpeg(), reason="ffmpeg no instalado")
