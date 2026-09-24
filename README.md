@@ -49,7 +49,8 @@ clipmax/
   web/             interfaz Flask
   demo.py          demo de punta a punta con datos sintéticos
 prompts/prompt_maestro.md
-tests/             46 pruebas (incluye grabación y render reales con ffmpeg)
+arrancar.py        lanzador de los .bat (verifica la carpeta clipmax y ejecuta python -m clipmax)
+tests/             50 pruebas (incluye grabación y render reales con ffmpeg)
 ```
 
 ## Pruebas

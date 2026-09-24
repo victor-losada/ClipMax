@@ -51,6 +51,8 @@ copy config.example.yaml config.yaml
 copy .env.example .env
 ```
 
+`python arrancar.py <comando>` equivale a `python -m clipmax <comando>`, y además verifica y corrige el nombre de la carpeta del código. Es lo que usan los `.bat`.
+
 Si `descargar` no puede bajar whisper.cpp: entra a https://github.com/ggml-org/whisper.cpp/releases, busca la versión más reciente que traiga `whisper-bin-x64.zip` y descomprímelo en `C:\ClipMax\bin\whisper\`. Los modelos están en https://huggingface.co/ggerganov/whisper.cpp/tree/main (van en `models\`).
 
 **GPU NVIDIA (opcional):**
@@ -132,6 +134,7 @@ Con decenas de streamers, graba a la pareja principal en 720p y desactiva a los 
 
 | Síntoma | Solución |
 |---|---|
+| `No module named clipmax` | La carpeta del código debe llamarse `clipmax` **en minúsculas** y estar en `C:\ClipMax\clipmax\__main__.py`. Windows no distingue mayúsculas, pero Python sí. `instalar.bat` e `iniciar.bat` (vía `arrancar.py`) la renombran solos; a mano: `ren ClipMax clipmax_tmp` y luego `ren clipmax_tmp clipmax`. |
 | `Kick respondió 403` | Actualiza: `pip install -U "yt-dlp[default,curl-cffi]"`. Revisa la VPN o el firewall. |
 | El chat no conecta o marca 0 msg/min | Kick pudo cambiar la clave de Pusher: busca la nueva y agrégala en `chat.pusher_keys` (Configuración → YAML). También puedes fijar `chatroom_id` a mano. |
 | "No encuentro whisper-cli" | `python -m clipmax descargar` o descomprime el zip en `bin\whisper`. |
