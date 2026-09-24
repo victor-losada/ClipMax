@@ -171,9 +171,9 @@ def cmd_prompt_grok(args) -> None:
     from .prompts import grok_prompt
     from .timeutil import today_str
 
-    _load_env()
-    cfg = ConfigStore(args.config).get()
-    print(grok_prompt(cfg, args.fecha or today_str(cfg)))
+    store, db = _boot(args.config)
+    cfg = store.get()
+    print(grok_prompt(cfg, args.fecha or today_str(cfg), db))
 
 
 def cmd_snapshot(args) -> None:

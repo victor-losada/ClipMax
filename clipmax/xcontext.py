@@ -117,6 +117,66 @@ def keywords(texts: list[str], top: int = 25) -> list[tuple[str, int]]:
     return items[:top]
 
 
+# Secciones del formato que se le pide a Grok (prompts/grok_contexto_x.md), en el orden en
+# que sirven como memoria para los días siguientes. VACÍOS no se arrastra.
+SECTIONS = ["PIQUES", "CONTINUACIONES", "MOMENTOS CLIPEADOS", "TEMAS", "VACIOS"]
+# "PIQUES: …", "**PIQUES:** …" o un encabezado solo ("## PIQUES"); una frase que empieza con
+# "Temas del día…" no es una sección.
+_SECTION_RE = re.compile(r"^[\s#*_>-]*(PIQUES|CONTINUACIONES|MOMENTOS CLIPEADOS|TEMAS|VAC[IÍ]OS)[*_ \t]*"
+                         r"(?::[*_ \t]*(.*)|$)", re.IGNORECASE)
+
+
+def sections(text: str) -> dict[str, str]:
+    """Secciones PIQUES / CONTINUACIONES / MOMENTOS CLIPEADOS / TEMAS / VACIOS de una salida de Grok."""
+    out: dict[str, list[str]] = {}
+    current = None
+    for line in (text or "").splitlines():
+        m = _SECTION_RE.match(line)
+        if m:
+            current = m.group(1).upper().replace("Í", "I")
+            out.setdefault(current, [])
+            line = m.group(2) or ""
+        if current and line.strip():
+            out[current].append(line.strip())
+    return {k: "\n".join(v) for k, v in out.items() if v}
+
+
+def digest(text: str, max_chars: int = 1500) -> str:
+    """Versión corta de un contexto de X ya pegado, para usarlo como memoria en días siguientes.
+
+    Con el formato de Grok se quedan PIQUES, CONTINUACIONES, MOMENTOS CLIPEADOS y TEMAS. Si son
+    posts sueltos, se usa el principio del texto sin enlaces.
+    """
+    secs = sections(text)
+    parts = [f"{name}: {secs[name]}" for name in SECTIONS[:-1] if secs.get(name)]
+    out = "\n".join(parts) if parts else _URL_RE.sub("", text or "").strip()
+    out = re.sub(r"[ \t]+", " ", out)
+    if len(out) > max_chars:
+        out = out[:max_chars].rsplit("\n", 1)[0].rstrip() + " [...]"
+    return out
+
+
+def recurring_topics(today: list[tuple[str, int]], previous: dict[str, str],
+                     ignore: set[str] | None = None, top: int = 12) -> list[tuple[str, list[str]]]:
+    """Temas de hoy que ya aparecían en el contexto de días anteriores: [(tema, [fechas])].
+
+    `previous` es {fecha: texto}. `ignore` quita lo que sale todos los días (nombres del evento,
+    de los streamers), que no dice nada de continuidad.
+    """
+    ignore = {normalize(w) for w in (ignore or set())}
+    prev_norm = {fecha: f" {normalize(_URL_RE.sub('', t))} " for fecha, t in previous.items() if t.strip()}
+    out = []
+    for kw, _n in today:
+        if kw in ignore or any(part in ignore for part in kw.split()):
+            continue
+        fechas = sorted(f for f, t in prev_norm.items() if f" {kw} " in t)
+        if fechas:
+            out.append((kw, fechas))
+        if len(out) >= top:
+            break
+    return out
+
+
 def context_text(db: Database, session: dict, cfg: dict) -> str:
     """Texto del contexto de X que va en el paquete para Claude (recortado)."""
     max_chars = int(cfg["x"]["max_caracteres_contexto"])

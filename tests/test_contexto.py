@@ -73,3 +73,80 @@ def test_config_normalizes_accounts(value):
 
     cfg = validate(deep_merge(DEFAULTS, {"x": {"cuentas": value}}))
     assert cfg["x"]["cuentas"] == ["dedreviil", "dedsafio"]
+
+
+# -- memoria entre días ---------------------------------------------------------------
+GROK_AYER = """@dedreviil (19:40): anuncia el juicio para mañana. https://x.com/dedreviil/status/1
+
+PIQUES: Westcol vs Gear por el abogado del juicio
+CONTINUACIONES: ninguna
+MOMENTOS CLIPEADOS: 20:10 · westcol · grita al juez
+TEMAS: juicio, abogado, totems
+VACÍOS: nada de Otro"""
+
+
+def _day_with_lore(cfg, db, fecha, contexto="", lore=""):
+    import json
+
+    from clipmax.config import session_dir
+    s = db.get_or_create_session(fecha)
+    if contexto:
+        db.update_session(s["id"], x_contexto=contexto)
+    if lore:
+        folder = session_dir(cfg, fecha) / "claude"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "decision.json").write_text(json.dumps({"lore_para_manana": lore}), encoding="utf-8")
+    return s
+
+
+def test_digest_keeps_grok_sections_and_drops_links():
+    from clipmax.xcontext import digest, sections
+    secs = sections("Temas del día: un post, no una sección\n\n" + GROK_AYER)
+    assert secs["PIQUES"].startswith("Westcol vs Gear") and secs["VACIOS"] == "nada de Otro"
+    assert secs["TEMAS"] == "juicio, abogado, totems" and "un post" not in "".join(secs.values())
+    d = digest(GROK_AYER)
+    assert d.startswith("PIQUES: Westcol vs Gear") and "TEMAS: juicio" in d
+    assert "VACÍOS" not in d and "VACIOS" not in d and "https://" not in d
+    # Posts sueltos sin secciones: el principio del texto, sin enlaces.
+    assert digest("@a: Westcol se pica https://x.com/a/status/9") == "@a: Westcol se pica"
+    assert digest("x" * 50, max_chars=10).endswith("[...]")
+
+
+def test_recurring_topics_ignores_everyday_names():
+    from clipmax.xcontext import recurring_topics
+    today = [("westcol", 9), ("juicio", 4), ("abogado juicio", 2), ("diamantes", 2)]
+    prev = {"2026-09-22": "Westcol pierde los diamantes", "2026-09-23": GROK_AYER}
+    out = recurring_topics(today, prev, ignore={"Westcol"})
+    assert out == [("juicio", ["2026-09-23"]), ("diamantes", ["2026-09-22"])]
+
+
+def test_grok_prompt_carries_previous_threads(cfg, db):
+    assert "es el primer día" in grok_prompt(cfg, "2026-09-24", db)
+    _day_with_lore(cfg, db, "2026-09-18", lore="Demasiado viejo: fuera de los 3 días.")
+    for fecha in ("2026-09-19", "2026-09-20"):
+        _day_with_lore(cfg, db, fecha, lore=f"Día {fecha}.")
+    _day_with_lore(cfg, db, "2026-09-22", lore="Gear juró vengarse de Westcol.")
+    db.get_or_create_session("2026-09-21")        # día vacío en medio: no ocupa lugar
+    _day_with_lore(cfg, db, "2026-09-23", contexto=GROK_AYER)
+    text = grok_prompt(cfg, "2026-09-24", db)
+    assert "2026-09-20" in text and "Demasiado viejo" not in text and "2026-09-19" not in text
+    assert "{{" not in text and "CONTINUACIONES:" in text
+    hilos = text.split("HILOS DE DÍAS ANTERIORES", 1)[1].split("Ignora:", 1)[0]
+    # Del más viejo al más reciente; si no hay lore de Claude, se usan los PIQUES de X.
+    assert hilos.index("2026-09-22") < hilos.index("2026-09-23")
+    assert "Gear juró vengarse" in hilos and "Westcol vs Gear por el abogado" in hilos
+    assert "totems" not in hilos
+    # Días posteriores no cuentan como historia.
+    assert "2026-09-23" not in grok_prompt(cfg, "2026-09-23", db).split("HILOS", 1)[1].split("Ignora:", 1)[0]
+
+
+def test_day_material_links_today_with_previous_days(cfg, db):
+    from clipmax.prompts import build_day_material
+    _day_with_lore(cfg, db, "2026-09-23", contexto=GROK_AYER, lore="Westcol y Gear quedaron en juicio.")
+    hoy = db.get_or_create_session("2026-09-24")
+    material = build_day_material(cfg, db, hoy, [], "@b: hoy es el juicio", [("westcol", 5), ("juicio", 3)])
+    assert "## Historia de días anteriores" in material and "### 2026-09-23" in material
+    assert "**Lore:** Westcol y Gear quedaron en juicio." in material
+    assert "PIQUES: Westcol vs Gear por el abogado" in material
+    assert "Temas de hoy que ya venían de días anteriores: juicio (09-23)" in material
+    assert "westcol (09-23)" not in material
