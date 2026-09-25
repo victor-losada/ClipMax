@@ -150,8 +150,10 @@ DEFAULTS: dict[str, Any] = {
         "exportar_clips_tiktok": True,
         "resumen_tiktok": True,        # además del resumen horizontal, uno vertical para TikTok
         "resumen_tiktok_max_s": 240,   # 4 minutos
-        "tiktok_narrado": True,        # narrador en off (Piper) según la ficha vertical; si no hay voz, texto
-        "narrador_velocidad": 0.95,    # <1 más rápido (0.95 ≈ 150 palabras/min)
+        "tiktok_narrado": True,        # narrador en off según la ficha vertical; si no hay voz, texto en pantalla
+        "narrador_motor": "edge",      # "edge" (voces neuronales de Microsoft, gratis, con internet) | "piper" (local)
+        "narrador_voz": "es-MX-JorgeNeural",   # voz de Microsoft (ver clipmax/narrator.py: VOCES)
+        "narrador_velocidad": 0.95,    # <1 más rápido (0.95 ≈ 5 % más rápido que lo normal)
         "titulos_en_pantalla": True,
         # Efectos (ver clipmax/effects.py)
         "subtitulos": True,            # subtítulos dinámicos: la palabra que se dice se ilumina
@@ -326,6 +328,10 @@ def validate(cfg: dict) -> dict:
     ed["estilo"] = ed.get("estilo") or "eufonia"
     if ed["formato"] not in ("horizontal", "vertical"):
         raise ConfigError("edicion.formato debe ser 'horizontal' o 'vertical'")
+    if ed.get("narrador_motor", "edge") not in ("edge", "piper"):
+        raise ConfigError("edicion.narrador_motor debe ser 'edge' o 'piper'")
+    if not 0.5 <= float(ed.get("narrador_velocidad", 0.95)) <= 2.0:
+        raise ConfigError("edicion.narrador_velocidad debe estar entre 0.5 y 2")
     if ed["narracion"] not in ("tarjetas", "sapi", "piper"):
         raise ConfigError("edicion.narracion debe ser 'tarjetas', 'sapi' o 'piper'")
     if ed["metodo_silencios"] not in ("transcripcion", "audio", "ninguno"):

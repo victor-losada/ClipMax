@@ -28,7 +28,7 @@ Configuración → "Clips para TikTok en vivo": activar/desactivar, usar Claude 
 
 ## Resumen del día para TikTok
 
-Sigue la ficha "resumen vertical, formato corto". Un **narrador en off** (voz Piper, local y gratis) cuenta el día en frases cortas de 8 a 15 palabras. Cada frase va sobre cortes rápidos del momento que describe. No lleva música.
+Sigue la ficha "resumen vertical, formato corto". Un **narrador en off** cuenta el día en frases cortas de 8 a 15 palabras, con una voz neuronal de Microsoft (gratis y natural). Cada frase va sobre cortes rápidos del momento que describe. No lleva música.
 
 **Pantalla (1080x1920)**
 - El clip 16:9 va centrado a lo ancho (un tercio de la altura) sobre el mismo clip desenfocado.
@@ -49,9 +49,13 @@ Sigue la ficha "resumen vertical, formato corto". Un **narrador en off** (voz Pi
 El audio va comprimido y fuerte (unos -12 LUFS), como en TikTok. El total nunca pasa de `edicion.resumen_tiktok_max_s` (240 s): si se pasa, se quitan primero los hechos de menor prioridad.
 
 **La voz del narrador**
-- Se baja con `python arrancar.py descargar --sin-whisper` (voz `es_MX-claude-high`, unos 110 MB, en `models\`). `doctor` avisa si falta.
-- Si un nombre suena mal (p. ej. "Westcol" leído en español), pon en Configuración → streamers → `pronunciacion` cómo debe decirlo (`Güéstcol`). Los subtítulos siguen escribiendo el nombre real.
-- `edicion.narrador_velocidad`: 0.95 ≈ 150 palabras por minuto; menos es más rápido.
-- Sin voz, o con `edicion.tiktok_narrado: false`, el resumen sale como antes: tramos seguidos con el texto en pantalla.
+- Por defecto usa las **voces neuronales de Microsoft**, las mismas de "Leer en voz alta" de Edge (paquete `edge-tts`). Son gratis, no piden cuenta, suenan fluidas y dan el tiempo exacto de cada palabra. Necesitan internet al editar.
+- En Configuración → "Voz del narrador" eliges la voz y la velocidad. **▶ Probar voz** lee una frase con los nombres de tus streamers.
+  - Voces de español: Jorge (México, por defecto), Gonzalo o Salomé (Colombia), Alonso, Dalia…
+  - Voces "multilingües" (Andrew, Brian, Ava): leen mejor los nombres en inglés, con un leve acento.
+- Si un nombre suena mal (p. ej. "Westcol" o "GirlOfNox"), escribe en la columna **Pronunciación** de los streamers cómo debe decirlo (`Güéstcol`, `Guérl of Nox`) y vuelve a probar. Los subtítulos siguen escribiendo el nombre real.
+- Las pausas largas entre frases se acortan (la ficha pide ninguna pausa de más de 0.3 s).
+- Sin internet, o con la opción "Piper", usa la voz local Piper, que suena más robótica. `python arrancar.py descargar --sin-whisper` la baja como respaldo.
+- `doctor` prueba la voz. Sin ningún narrador, o con `edicion.tiktok_narrado: false`, el resumen sale como antes: tramos seguidos con el texto en pantalla.
 
 El caption sale en la página de la sesión, con botón para copiarlo. Para rehacerlo sin volver a pagar a Claude: Sesión → paso **editar** → "desde aquí". Las decisiones de antes de esta función no traen narración y salen con el formato de texto en pantalla.

@@ -16,7 +16,8 @@ import yaml
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, url_for
 
 from .. import brain, pipeline, prompts, xcontext
-from ..config import ConfigError, ConfigStore, data_dir, get_streamer, session_dir, streamer_name
+from ..config import (DEFAULTS, ConfigError, ConfigStore, data_dir, deep_merge, get_streamer, session_dir,
+                      streamer_name, validate)
 from ..db import Database
 from ..detector import describe_components
 from ..logutil import RING
@@ -68,7 +69,10 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
 
     @app.get("/config")
     def config_page():
-        return render_template("config.html", cfg_json=json.dumps(store.get(), ensure_ascii=False))
+        from ..narrator import VOCES
+
+        return render_template("config.html", cfg_json=json.dumps(store.get(), ensure_ascii=False),
+                               voces_json=json.dumps(VOCES, ensure_ascii=False))
 
     @app.get("/config/yaml")
     def config_yaml():
@@ -258,6 +262,36 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
             return _err(str(exc))
         return jsonify({"ok": True, "aviso": "Guardado. Los cambios aplican a la próxima sesión."
                         if manager.active else "Guardado."})
+
+    @app.post("/api/narrador/prueba")
+    def api_narrador_prueba():
+        """Lee una frase de prueba con la voz y las pronunciaciones del formulario (sin guardar)."""
+        from .. import narrator
+
+        body = request.get_json(silent=True)
+        try:
+            cfg = validate(deep_merge(DEFAULTS, body)) if isinstance(body, dict) else store.get()
+        except (ConfigError, ValueError, TypeError) as exc:
+            return _err(str(exc))
+        if not narrator.available(cfg):
+            return _err("No hay narrador: instala edge-tts (pip install -r requirements.txt)")
+        names = [s["nombre"] for s in cfg["streamers"] if s.get("activo", True)][:3] or ["el streamer"]
+        text = (f"Hoy en {cfg['evento']['nombre']}: 3 muertes, una alianza rota y {names[0]} al borde del abismo. "
+                f"Pero entonces {names[-1]} encontró la mina de diamantes y todo cambió.")
+        out = data_dir(cfg) / "narrador_prueba.wav"
+        try:
+            nar = narrator.narrate(cfg, text, out)
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"No se pudo generar la voz: {exc}")
+        return jsonify({"ok": True, "texto": text, "segundos": round(nar.dur, 1),
+                        "motor": narrator.describe(cfg), "url": "/api/narrador/prueba.wav"})
+
+    @app.get("/api/narrador/prueba.wav")
+    def api_narrador_audio():
+        path = data_dir(store.get()) / "narrador_prueba.wav"
+        if not path.exists():
+            abort(404)
+        return send_file(path, mimetype="audio/wav", max_age=0)
 
     @app.post("/config/yaml")
     def api_config_yaml():

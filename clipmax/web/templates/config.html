@@ -59,7 +59,14 @@
     </div>
     <label class="row"><input type="checkbox" id="ed_tiktok"> Exportar clips verticales para TikTok de los mejores momentos</label>
     <label class="row"><input type="checkbox" id="ed_tkres"> Resumen del día para TikTok (vertical, máximo <input id="ed_tkmax" type="number" min="30" max="600" style="width:70px"> s)</label>
-    <label class="row"><input type="checkbox" id="ed_tknarr"> Con narrador en off (voz Piper: contadores, flashes y citas; sin voz sale con texto en pantalla)</label>
+    <label class="row"><input type="checkbox" id="ed_tknarr"> Con narrador en off (contadores, flashes y citas; sin voz sale con texto en pantalla)</label>
+    <div class="row">
+      <div><label>Voz del narrador</label><select id="ed_nvoz"></select></div>
+      <div><label>Velocidad</label><select id="ed_nvel"><option value="1.05">Pausada</option><option value="1">Normal</option><option value="0.95">Algo rápida</option><option value="0.9">Rápida</option><option value="0.85">Muy rápida</option></select></div>
+      <div><label>&nbsp;</label><button class="sec" id="btn_voz" onclick="probarVoz()">▶ Probar voz</button></div>
+      <audio id="voz_audio" controls style="display:none; height:32px"></audio>
+    </div>
+    <p class="mut small">Voces neuronales de Microsoft: gratis, necesitan internet. Si un nombre suena mal, escribe en la columna «Pronunciación» de los streamers cómo debe decirlo (ej. Güéstcol) y prueba de nuevo. Sin internet se usa Piper (más robótica).</p>
     <h3>Clips para TikTok en vivo</h3>
     <label class="row"><input type="checkbox" id="cv_activo"> Armar clips mientras se graba (se descargan desde el Panel)</label>
     <label class="row"><input type="checkbox" id="cv_claude"> Que Claude elija corte, título y caption (<span id="cv_modelo"></span>, ~$0.005 por clip)</label>
@@ -96,6 +103,7 @@
 
 <script>
 const CFG = {{ cfg_json|safe }};
+const VOCES = {{ voces_json|safe }};
 const DIAS = ["lun","mar","mie","jue","vie","sab","dom"];
 const $ = id => document.getElementById(id);
 
@@ -114,6 +122,13 @@ function fill() {
   $("ed_tiktok").checked = ed.exportar_clips_tiktok;
   $("ed_tkres").checked = ed.resumen_tiktok !== false; $("ed_tkmax").value = ed.resumen_tiktok_max_s || 240;
   $("ed_tknarr").checked = ed.tiktok_narrado !== false;
+  const voces = VOCES.some(v => v[0] === ed.narrador_voz) ? VOCES : [...VOCES, [ed.narrador_voz, ed.narrador_voz]];
+  $("ed_nvoz").innerHTML = '<option value="piper">Piper (sin internet, robótica)</option>' +
+    voces.map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`).join("");
+  $("ed_nvoz").value = ed.narrador_motor === "piper" ? "piper" : (ed.narrador_voz || "es-MX-JorgeNeural");
+  const vel = String(ed.narrador_velocidad ?? 0.95);
+  if (![...$("ed_nvel").options].some(o => o.value === vel)) $("ed_nvel").add(new Option(vel, vel));
+  $("ed_nvel").value = vel;
   const cv = CFG.clips_vivo;
   $("cv_activo").checked = cv.activo; $("cv_claude").checked = cv.usar_claude; $("cv_modelo").textContent = cv.modelo;
   $("cv_hora").value = cv.max_por_hora; $("cv_min").value = cv.duracion_min_s; $("cv_max").value = cv.duracion_max_s;
@@ -156,7 +171,7 @@ function pairOptions() {
   });
 }
 
-async function save() {
+function collect() {
   const cfg = structuredClone(CFG);
   const ev = cfg.evento;
   ev.nombre = $("ev_nombre").value; ev.hora_inicio = $("ev_hora").value; ev.duracion_horas = parseFloat($("ev_dur").value);
@@ -177,6 +192,9 @@ async function save() {
     exportar_clips_tiktok: $("ed_tiktok").checked,
     resumen_tiktok: $("ed_tkres").checked, resumen_tiktok_max_s: parseInt($("ed_tkmax").value || "240"),
     tiktok_narrado: $("ed_tknarr").checked,
+    narrador_motor: $("ed_nvoz").value === "piper" ? "piper" : "edge",
+    narrador_voz: $("ed_nvoz").value === "piper" ? (cfg.edicion.narrador_voz || "es-MX-JorgeNeural") : $("ed_nvoz").value,
+    narrador_velocidad: parseFloat($("ed_nvel").value),
     subtitulos: $("fx_subs").checked, subtitulos_palabras: parseInt($("fx_palabras").value),
     zoom: $("fx_zoom").checked, pantalla_dividida: $("fx_split").checked,
     efectos_sonido: $("fx_sfx").checked, sfx_max_por_video: parseInt($("fx_max").value || "0"),
@@ -194,8 +212,22 @@ async function save() {
     transcribir_en_vivo: tr.querySelector(".f-vivo").checked,
     pronunciacion: tr.querySelector(".f-pron").value.trim(),
   })).filter(s => s.url && s.url !== "https://kick.com/");
+  return cfg;
+}
+
+async function save() {
+  const cfg = collect();
   try { const r = await api("/api/config", cfg); toast(r.aviso); setTimeout(() => location.reload(), 900); }
   catch (e) { toast("Error: " + e.message, 6000); }
+}
+async function probarVoz() {
+  const b = $("btn_voz"); b.disabled = true; b.textContent = "Generando…";
+  try {
+    const r = await api("/api/narrador/prueba", collect());
+    const a = $("voz_audio"); a.src = r.url + "?t=" + Date.now(); a.style.display = ""; a.play();
+    toast(`${r.motor} · ${r.segundos} s`);
+  } catch (e) { toast("Error: " + e.message, 6000); }
+  finally { b.disabled = false; b.textContent = "▶ Probar voz"; }
 }
 fill();
 </script>

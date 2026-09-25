@@ -748,8 +748,8 @@ def render_tiktok_summary(cfg: dict, db: Database, session: dict, decision: dict
             except Exception as exc:  # noqa: BLE001
                 log.error("Falló el resumen TikTok narrado (%s); se arma el de texto en pantalla", exc)
         else:
-            log.warning("No está la voz del narrador (%s): el resumen TikTok sale sin narración. "
-                        "Instálala con 'python arrancar.py descargar --sin-whisper'", cfg["edicion"]["piper_voz"])
+            log.warning("No hay narrador (falta edge-tts: pip install -r requirements.txt): "
+                        "el resumen TikTok sale con texto en pantalla")
     items = decision.get("resumen_tiktok") or tiktok_summary_items(cfg, decision, candidates)
     if not items:
         log.info("Sin tramos para el resumen de TikTok")
