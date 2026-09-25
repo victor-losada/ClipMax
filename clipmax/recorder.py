@@ -32,6 +32,10 @@ from .winutil import POPEN_FLAGS
 log = logging.getLogger(__name__)
 
 
+# Segundos de grabación tras los cuales se mide cuánto video "viejo" trajo el arranque.
+LEAD_PROBE_S = 20.0
+
+
 def recordings_dir(cfg: dict, fecha: str, slug: str | None = None) -> Path:
     d = session_dir(cfg, fecha) / "grabaciones"
     if slug:
@@ -168,9 +172,13 @@ class StreamRecorder(threading.Thread):
 
         stale_limit = float(self.cfg["grabacion"]["estancado_s"])
         last_size, last_growth = 0, time.time()
+        lead_checked = False
         while proc.poll() is None:
             if self._stop_evt.wait(2):
                 break
+            if not lead_checked and time.time() - started_at >= LEAD_PROBE_S:
+                lead_checked = True
+                started_at = self._correct_start(part, path, started_at)
             size = path.stat().st_size if path.exists() else 0
             if size > last_size:
                 last_size, last_growth = size, time.time()
@@ -184,6 +192,33 @@ class StreamRecorder(threading.Thread):
         if proc.returncode not in (0, None, 255) and self._stderr_tail:
             log.info("[%s] ffmpeg terminó (%s): %s", self.slug, proc.returncode, self._stderr_tail[-1])
         self._set(parte=None, estado="reconectando" if not self._stop_evt.is_set() else "detenido")
+
+    def _correct_start(self, part: dict, path: Path, started_at: float) -> float:
+        """Ajusta la hora de pared del segundo 0 del archivo.
+
+        Al conectarse a un directo HLS, ffmpeg baja de golpe los últimos segmentos de la lista
+        (en Kick, ~15-20 s de video ya emitido). Así, el segundo 0 del archivo es anterior a la
+        hora en que llegaron los primeros bytes y, sin corregirlo, cada clip salía corrido esos
+        segundos respecto al chat (se podía perder el remate). Se mide una vez: duración del
+        archivo menos tiempo de reloj transcurrido.
+        """
+        try:
+            media = tools.probe_duration(path)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("[%s] no pude medir el arranque: %s", self.slug, exc)
+            return started_at
+        lead = media - (time.time() - started_at)
+        if not (1.0 <= lead <= 90.0):
+            return started_at
+        new_start = started_at - lead
+        self.db.update_part(part["id"], started_at=new_start)
+        parte = dict(self.status.get("parte") or {})
+        if parte.get("id") == part["id"]:
+            parte["started_at"] = new_start
+            self._set(desde=new_start, parte=parte)
+        log.info("[%s] el directo arrancó con %.1fs ya emitidos; corrijo la hora de inicio de la parte",
+                 self.slug, lead)
+        return new_start
 
     def _shutdown(self, proc: subprocess.Popen) -> None:
         """Cierre ordenado: 'q' por stdin (ffmpeg cierra el archivo bien); si no, kill."""

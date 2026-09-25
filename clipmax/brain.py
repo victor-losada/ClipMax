@@ -15,6 +15,7 @@ Ambos modos terminan igual: decision.json validado en data/sesiones/<fecha>/clau
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -23,7 +24,7 @@ from pathlib import Path
 
 from .config import session_dir
 from .db import Database
-from .prompts import OUTPUT_SCHEMA, master_prompt
+from .prompts import CLIP_SCHEMA, OUTPUT_SCHEMA, clip_prompt, master_prompt
 
 log = logging.getLogger(__name__)
 
@@ -219,6 +220,76 @@ def decide_api(cfg: dict, db: Database, session: dict, material: str) -> dict:
         raise ClaudeError(f"Claude no devolvió JSON válido: {text[:300]}") from exc
 
 
+@contextlib.contextmanager
+def _api_errors():
+    """Errores del SDK -> ClaudeError con un mensaje que el usuario entiende."""
+    import anthropic
+
+    try:
+        yield
+    except anthropic.AuthenticationError as exc:
+        raise ClaudeError("ANTHROPIC_API_KEY inválida o ausente (revisa el archivo .env)") from exc
+    except anthropic.NotFoundError as exc:
+        raise ClaudeError(f"Modelo inexistente o sin acceso: {exc.message}") from exc
+    except anthropic.RateLimitError as exc:
+        raise ClaudeError("Límite de uso de la API alcanzado; reintenta en unos minutos") from exc
+    except anthropic.APIStatusError as exc:
+        raise ClaudeError(f"Error de la API ({exc.status_code}): {exc.message}") from exc
+    except anthropic.APIConnectionError as exc:
+        raise ClaudeError("Sin conexión con la API de Anthropic") from exc
+    except TypeError as exc:  # el SDK lanza TypeError si no encuentra ninguna credencial
+        if "authentication" not in str(exc).lower():
+            raise
+        raise ClaudeError("Falta ANTHROPIC_API_KEY en el archivo .env") from exc
+
+
+def curate_live_clip(cfg: dict, db: Database, session: dict, material: str) -> dict:
+    """Clip en vivo: Claude decide si publicarlo, dónde cortarlo, título, caption y hashtags.
+
+    Llamada chica (unos 2-3 mil tokens de entrada) con salida estructurada. El modelo sale de
+    clips_vivo.modelo (Haiku por defecto: se hacen decenas por día y el tope mensual es chico).
+    """
+    model = cfg["clips_vivo"]["modelo"]
+    system = clip_prompt(cfg)
+    messages = [{"role": "user", "content": material}]
+    client = _client()
+    with _api_errors():
+        counted = client.messages.count_tokens(model=model, system=system, messages=messages).input_tokens
+    haiku = model.startswith("claude-haiku")
+    p_in, p_out = prices(cfg, model)
+    estimate = (counted * p_in + (800 if haiku else 4000) * p_out) / 1_000_000
+    status = budget_status(cfg, db)
+    if status["gastado"] + estimate > status["presupuesto"]:
+        raise BudgetExceeded(f"El clip costaría ~${estimate:.3f} y este mes ya van ${status['gastado']:.2f} "
+                             f"de ${status['presupuesto']:.2f}")
+    params = {"model": model, "max_tokens": 2000 if haiku else 8000, "system": system,
+              "messages": messages, **_model_params(cfg, model)}
+    if "effort" in params.get("output_config", {}):
+        params["output_config"]["effort"] = "low"   # tarea corta: no hace falta pensar mucho
+    params.setdefault("output_config", {})["format"] = {"type": "json_schema", "schema": CLIP_SCHEMA}
+    t0 = time.time()
+    with _api_errors():
+        msg = client.messages.create(**params)
+    cost = cost_from_usage(cfg, model, msg.usage)
+    db.add_claude_run(
+        session_id=session["id"], tipo="clip_vivo", modelo=model,
+        input_tokens=msg.usage.input_tokens, output_tokens=msg.usage.output_tokens,
+        cache_read=getattr(msg.usage, "cache_read_input_tokens", 0) or 0,
+        cache_write=getattr(msg.usage, "cache_creation_input_tokens", 0) or 0,
+        costo_usd=cost, ok=int(msg.stop_reason == "end_turn"),
+        nota=f"stop={msg.stop_reason} {time.time() - t0:.0f}s",
+    )
+    if msg.stop_reason == "refusal":
+        raise ClaudeError("Claude rechazó el clip")
+    if msg.stop_reason == "max_tokens":
+        raise ClaudeError("La respuesta del clip se cortó (max_tokens)")
+    text = _text_of(msg)
+    try:
+        return json.loads(text)
+    except ValueError as exc:
+        raise ClaudeError(f"Claude no devolvió JSON válido: {text[:200]}") from exc
+
+
 def research_x_web(cfg: dict, db: Database, session: dict) -> str:
     """x.modo = claude_web: Claude busca en la web qué se comenta hoy del evento."""
     import anthropic
@@ -394,6 +465,28 @@ def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dic
             "captions_tiktok": [str(c).strip() for c in (m.get("captions_tiktok") or []) if str(c).strip()][:5],
             "hashtags": [("#" + str(h).lstrip("#")).replace(" ", "") for h in (m.get("hashtags") or []) if str(h).strip()][:8],
         })
+    # Resumen vertical para TikTok: tramos dentro de cada candidato y, en total, no más del máximo.
+    tk_max = float(cfg["edicion"].get("resumen_tiktok_max_s", 240))
+    resumen_tiktok, used = [], 0.0
+    for i, t in enumerate(raw.get("resumen_tiktok") or []):
+        cid = int(_num(t.get("candidato_id"), -1))
+        cand = by_id.get(cid)
+        if not cand:
+            warnings.append(f"resumen_tiktok[{i}]: candidato {cid} no existe; se omite")
+            continue
+        a = max(0.0, _num(t.get("inicio")))
+        b = min(cand["duracion"], _num(t.get("fin"), cand["duracion"]))
+        mom = _num(t.get("momento_clave"))
+        if b - a > 45:  # tramo muy largo para TikTok: se deja la parte del remate
+            end = min(b, mom + 5) if a <= mom <= b else b
+            a, b = max(a, end - 45), end
+        if b - a < 3 or used >= tk_max - 3:
+            continue
+        b = min(b, a + (tk_max - used))
+        used += b - a
+        resumen_tiktok.append({"candidato_id": cid, "inicio": round(a, 2), "fin": round(b, 2),
+                               "texto_en_pantalla": str(t.get("texto_en_pantalla") or "").strip()[:60],
+                               "momento_clave": round(mom, 2) if a <= mom <= b else 0.0})
     decision = {
         "titulo_video": str(raw.get("titulo_video") or f"{cfg['evento']['nombre']} · resumen").strip(),
         "resumen_del_dia": str(raw.get("resumen_del_dia") or "").strip(),
@@ -405,6 +498,8 @@ def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dic
             for d in raw.get("descartados") or [] if isinstance(d, dict)
         ],
         "notas_editor": str(raw.get("notas_editor") or "").strip(),
+        "resumen_tiktok": resumen_tiktok,
+        "caption_resumen_tiktok": str(raw.get("caption_resumen_tiktok") or "").strip(),
         "advertencias": warnings,
     }
     return decision, warnings

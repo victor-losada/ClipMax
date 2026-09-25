@@ -44,6 +44,14 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
     def _dur(sec):
         return fmt_duration(sec or 0)
 
+    def _clip_json(cfg: dict, fecha: str, c: dict) -> dict:
+        def url(path):
+            return url_for("files", fecha=fecha, rel="clips_vivo/" + Path(path).name) if path else None
+        return {"id": c["id"], "estado": c["estado"], "slug": c["slug"], "nombre": streamer_name(cfg, c["slug"]),
+                "hora": fmt_clock(c["start_ts"], cfg, seconds=False), "titulo": c["titulo"], "caption": c["caption"],
+                "hashtags": c["hashtags"], "duracion": c["duracion"], "origen": c["origen"], "nota": c["nota"],
+                "subido": bool(c["subido"]), "url": url(c["path"]), "thumb": url(c["thumb"])}
+
     def _session_or_404(fecha: str) -> dict:
         s = db.get_session_by_date(fecha)
         if not s:
@@ -89,10 +97,12 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
             "md": (folder / f"resumen_{fecha}.md").exists(),
             "paquete": (folder / "claude" / f"paquete_para_claude_{fecha}.md").exists(),
             "tiktok": sorted(p.name for p in (folder / "clips_tiktok").glob("*.mp4")) if (folder / "clips_tiktok").exists() else [],
+            "tiktok_resumen": (folder / f"resumen_tiktok_{fecha}.mp4").exists(),
         }
         parts = db.list_parts(s["id"])
+        live = [_clip_json(cfg, fecha, c) for c in db.live_clips(s["id"])]
         return render_template(
-            "sesion.html", s=s, fecha=fecha, moments=moments, outputs=outputs, files=files,
+            "sesion.html", s=s, fecha=fecha, moments=moments, outputs=outputs, files=files, live=live,
             pasos=pipeline.STEPS, estado_pasos=db.pipeline_state(s["id"]), parts=parts,
             x_posts=db.x_posts(s["id"]), decision=brain.load_decision(cfg, fecha),
             runs=db.query("SELECT * FROM claude_runs WHERE session_id=? ORDER BY created_at DESC", (s["id"],)),
@@ -121,9 +131,12 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
         st["momentos"] = []
         if sess:
             st["estado_sesion"] = sess["estado"]
+            st["clips_vivo_lista"] = [_clip_json(cfg, fecha, c) for c in db.live_clips(sess["id"], limit=24)
+                                      if c["estado"] != "descartado"]
             for m in db.moments(sess["id"], limit=10):
                 st["momentos"].append({
-                    "rank": m["rank"], "slug": m["slug"], "nombre": streamer_name(cfg, m["slug"]), "score": m["score"],
+                    "id": m["id"], "rank": m["rank"], "slug": m["slug"], "nombre": streamer_name(cfg, m["slug"]),
+                    "score": m["score"],
                     "desde": fmt_clock(m["start_ts"], cfg), "hasta": fmt_clock(m["end_ts"], cfg),
                     "por_que": describe_components(cfg, m["componentes"]),
                     "pareja": bool(m["componentes"].get("pareja")),
@@ -196,6 +209,36 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
     @app.get("/api/prompt-maestro")
     def api_master_prompt():
         return jsonify({"texto": prompts.master_prompt(store.get())})
+
+    @app.post("/api/clips-vivo/crear")
+    def api_live_clip_create():
+        body = request.get_json(silent=True) or {}
+        try:
+            moment_id = int(body.get("moment_id"))
+        except (TypeError, ValueError):
+            return _err("moment_id inválido")
+        if not manager.request_clip(moment_id):
+            return _err("Los clips en vivo se hacen mientras se graba (inicia la sesión)")
+        return jsonify({"ok": True})
+
+    @app.post("/api/clips-vivo/<int:clip_id>/subido")
+    def api_live_clip_uploaded(clip_id: int):
+        c = db.live_clip(clip_id)
+        if not c:
+            abort(404)
+        body = request.get_json(silent=True) or {}
+        db.update_live_clip(clip_id, subido=int(bool(body.get("subido", True))))
+        return jsonify({"ok": True})
+
+    @app.post("/api/sesion/<fecha>/diagnostico")
+    def api_diagnostic(fecha: str):
+        from .. import diagnostic
+
+        _session_or_404(fecha)
+        try:
+            return jsonify({"texto": diagnostic.run(store.get(), db, fecha)})
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"No se pudo diagnosticar: {exc}")
 
     @app.get("/api/prompt-grok/<fecha>")
     def api_grok_prompt(fecha: str):

@@ -144,6 +144,8 @@ DEFAULTS: dict[str, Any] = {
         "voz_sapi": "",            # parte del nombre de la voz, ej. "Sabina"
         "fuente": "",              # vacío = Segoe UI Bold / Arial Bold en Windows
         "exportar_clips_tiktok": True,
+        "resumen_tiktok": True,        # además del resumen horizontal, uno vertical para TikTok
+        "resumen_tiktok_max_s": 240,   # 4 minutos
         "titulos_en_pantalla": True,
         # Efectos (ver clipmax/effects.py)
         "subtitulos": True,            # subtítulos dinámicos: la palabra que se dice se ilumina
@@ -157,6 +159,20 @@ DEFAULTS: dict[str, Any] = {
         "sfx_volumen": 0.55,
         "sfx_transicion": "whoosh",    # al entrar a un clip después de una tarjeta ("" = ninguno)
         "sfx_max_por_video": 10,       # "uno que otro": tope de efectos en todo el resumen
+        # Ajustes finos de sincronía (segundos; normalmente 0). + = más tarde, - = más temprano.
+        "desfase_audio_s": 0.0,        # si en tus videos la voz llega antes/después que la imagen
+        "subtitulos_desfase_s": 0.0,   # si los subtítulos salen antes/después de la voz
+    },
+    # Clips verticales para TikTok que se arman MIENTRAS se graba (clipmax/liveclips.py).
+    "clips_vivo": {
+        "activo": True,
+        "usar_claude": True,             # Claude elige corte, título y caption (si claude.modo es "api")
+        "modelo": "claude-haiku-4-5",    # ~$0.005 por clip; un modelo mayor cuesta ~10 veces más
+        "max_por_hora": 6,
+        "top_candidatos": 12,            # solo se miran los N mejores momentos detectados hasta ahora
+        "duracion_min_s": 15,
+        "duracion_max_s": 60,
+        "intervalo_s": 60,               # cada cuánto revisa si hay un momento listo para clip
     },
     "web": {"host": "127.0.0.1", "puerto": 5000, "abrir_navegador": True},
 }
@@ -299,6 +315,30 @@ def validate(cfg: dict) -> dict:
     if float(ed["duracion_min_min"]) > float(ed["duracion_max_min"]):
         raise ConfigError("edicion.duracion_min_min no puede ser mayor que duracion_max_min")
     # Resolución coherente con el formato (pares, como exige yuv420p).
+    try:
+        ed["resumen_tiktok_max_s"] = max(30, min(600, int(ed.get("resumen_tiktok_max_s") or 240)))
+    except (TypeError, ValueError):
+        raise ConfigError("edicion.resumen_tiktok_max_s debe ser un número de segundos") from None
+    ed["resumen_tiktok"] = bool(ed.get("resumen_tiktok", True))
+    cv = cfg["clips_vivo"]
+    try:
+        for key in ("max_por_hora", "top_candidatos", "duracion_min_s", "duracion_max_s", "intervalo_s"):
+            cv[key] = int(cv[key])
+    except (TypeError, ValueError):
+        raise ConfigError("clips_vivo: max_por_hora, top_candidatos, duraciones e intervalo deben ser números") from None
+    cv["activo"], cv["usar_claude"] = bool(cv["activo"]), bool(cv["usar_claude"])
+    if not (5 <= cv["duracion_min_s"] < cv["duracion_max_s"] <= 180):
+        raise ConfigError("clips_vivo: la duración mínima debe ser menor que la máxima (entre 5 y 180 s)")
+    cv["max_por_hora"] = max(0, min(60, cv["max_por_hora"]))
+    cv["top_candidatos"] = max(1, cv["top_candidatos"])
+    cv["intervalo_s"] = max(15, cv["intervalo_s"])
+    for key in ("desfase_audio_s", "subtitulos_desfase_s"):
+        try:
+            ed[key] = round(float(ed.get(key) or 0.0), 3)
+        except (TypeError, ValueError):
+            raise ConfigError(f"edicion.{key} debe ser un número de segundos (ej. -0.3)") from None
+        if abs(ed[key]) > 5:
+            raise ConfigError(f"edicion.{key} debe estar entre -5 y 5 segundos")
     ed["ancho"] = int(ed["ancho"]) // 2 * 2
     ed["alto"] = int(ed["alto"]) // 2 * 2
     if ed["formato"] == "vertical" and ed["ancho"] > ed["alto"]:

@@ -233,3 +233,55 @@ def test_60fps_source_keeps_speed_and_sync(cfg, tmp_path, ext):
         assert any(a - 0.08 <= b <= z + 0.05 for a, z in flashes), (flashes, beeps)
         if b > 2:
             assert min(abs(a - b) for a, _z in flashes) < 0.08, (flashes, beeps)
+
+
+def test_words_use_dtw_times_when_present():
+    # t_dtw (centésimas) marca el final de cada palabra; el inicio es el fin de la anterior salvo pausas.
+    toks = [{"text": "[_BEG_]", "offsets": {"from": 0, "to": 0}, "t_dtw": -1},
+            {"text": " Gear", "offsets": {"from": 0, "to": 900}, "t_dtw": 150},
+            {"text": " us", "offsets": {"from": 900, "to": 1000}, "t_dtw": 190},
+            {"text": "ted", "offsets": {"from": 1000, "to": 1100}, "t_dtw": 210},
+            {"text": " lloró", "offsets": {"from": 1100, "to": 1300}, "t_dtw": 420}]
+    seg = {"offsets": {"from": 0, "to": 4500}, "text": " Gear usted lloró", "tokens": toks}
+    s = parse_whisper_json(json.dumps({"transcription": [seg]}).encode())[0]
+    assert [w for *_t, w in s.words] == ["Gear", "usted", "lloró"]
+    (a0, b0, _), (a1, b1, _), (a2, b2, _) = s.words
+    assert b0 == 1.5 and a0 == pytest.approx(1.5 - 0.5)          # primera: duración estimada
+    assert b1 == 2.1 and a1 == pytest.approx(2.1 - 0.575)          # casi pegada a la anterior
+    assert b2 == 4.2 and a2 == pytest.approx(4.2 - 0.575)          # tras una pausa: no arranca en 2.1
+
+
+def test_whisper_uses_dtw_and_falls_back(cfg, tmp_path, monkeypatch):
+    from clipmax import tools, transcriber
+
+    calls = []
+
+    def fake_run(cmd, timeout=None, **kw):
+        calls.append(list(cmd))
+        if "-dtw" in cmd:
+            raise RuntimeError("Falló whisper-cli (código 1):\nerror: unknown argument: -dtw")
+        (tmp_path / "audio.json").write_text('{"transcription": [{"offsets": {"from": 0, "to": 1000}, "text": " hola"}]}')
+
+    monkeypatch.setattr(tools, "run", fake_run)
+    monkeypatch.setattr(tools, "whisper_cli", lambda cfg: "whisper-cli")
+    tr = transcriber.WhisperTranscriber(cfg)
+    monkeypatch.setattr(tr, "model_path", lambda which: tmp_path / "ggml-small.bin")
+    assert [s.text for s in tr.transcribe_wav(tmp_path / "audio.wav")] == ["hola"]
+    assert calls[0][calls[0].index("-dtw") + 1] == "small" and "-nfa" in calls[0]
+    assert "-dtw" not in calls[1] and "-nfa" not in calls[1] and "-ojf" in calls[1]
+    # En vivo (modelo rápido, solo menciones) no se paga el costo de DTW.
+    calls.clear()
+    tr.transcribe_wav(tmp_path / "audio.wav", "vivo")
+    assert len(calls) == 1 and "-dtw" not in calls[0]
+
+
+def test_sync_settings_shift_audio_and_subtitles(cfg, tmp_path):
+    from clipmax.config import ConfigError, validate
+    cfg["edicion"]["desfase_audio_s"] = "-0.25"
+    assert validate(cfg)["edicion"]["desfase_audio_s"] == -0.25
+    assert editor.audio_shift(cfg) == ",atrim=start=0.250,asetpts=PTS-STARTPTS"
+    cfg["edicion"]["desfase_audio_s"] = 0.4
+    assert editor.audio_shift(cfg) == ",adelay=delays=400:all=1"
+    cfg["edicion"]["desfase_audio_s"] = 9
+    with pytest.raises(ConfigError):
+        validate(cfg)

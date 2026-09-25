@@ -323,6 +323,16 @@ def render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int],
 SYNC_AUDIO = "aresample=async=1:first_pts=0"
 
 
+def audio_shift(cfg: dict) -> str:
+    """Filtro extra para edicion.desfase_audio_s: + retrasa la voz, - la adelanta."""
+    shift = float(cfg["edicion"].get("desfase_audio_s") or 0.0)
+    if shift > 0:
+        return f",adelay=delays={int(round(shift * 1000))}:all=1"
+    if shift < 0:
+        return f",atrim=start={-shift:.3f},asetpts=PTS-STARTPTS"
+    return ""
+
+
 def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int], title_png: Path | None,
                  work: Path | None, sfx_lib: dict | None, effects_on: bool) -> float:
     ed = cfg["edicion"]
@@ -334,7 +344,9 @@ def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int]
     kept = spec.kept_duration
     keep = spec.keep or [(0.0, spec.dur)]
     k = len(keep)
-    inputs: list[list[str]] = [["-ss", f"{spec.file_start:.3f}", "-t", f"{spec.dur:.3f}", "-i", spec.path]]
+    # Si se adelanta el audio (desfase negativo) hace falta leer ese poco más de la fuente.
+    extra = max(0.0, -float(ed.get("desfase_audio_s") or 0.0))
+    inputs: list[list[str]] = [["-ss", f"{spec.file_start:.3f}", "-t", f"{spec.dur + extra:.3f}", "-i", spec.path]]
 
     def add_input(args: list[str]) -> int:
         inputs.append(args)
@@ -348,7 +360,7 @@ def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int]
     # start_time/first_pts=0 recortan lo negativo y rellenan el hueco inicial.
     # fps además baja los 60 fps de Kick a los de salida antes del zoom (si no, cámara lenta).
     parts = [f"[0:v]fps={fps}:start_time=0,split={k}" + "".join(f"[vs{i}]" for i in range(k)),
-             f"[0:a]{SYNC_AUDIO},asplit={k}" + "".join(f"[as{i}]" for i in range(k))]
+             f"[0:a]{SYNC_AUDIO}{audio_shift(cfg)},asplit={k}" + "".join(f"[as{i}]" for i in range(k))]
     for i, (a, b) in enumerate(keep):
         ln = b - a
         fade = min(0.04, ln / 4)
@@ -613,6 +625,113 @@ def render_summary(cfg: dict, db: Database, session: dict, decision: dict, candi
     db.add_output(session["id"], "video", str(final), {"duracion_s": round(real, 1), "piezas": len(pieces)})
     if not log.isEnabledFor(logging.DEBUG):
         shutil.rmtree(work, ignore_errors=True)
+    return final
+
+
+def trim_keep(keep: list[tuple[float, float]], max_len: float) -> list[tuple[float, float]]:
+    """Recorta los tramos a conservar para que sumen como mucho max_len segundos."""
+    out, used = [], 0.0
+    for a, b in keep:
+        if used >= max_len:
+            break
+        b = min(b, a + (max_len - used))
+        out.append((a, b))
+        used += b - a
+    return out
+
+
+def tiktok_summary_items(cfg: dict, decision: dict, candidates: list[dict]) -> list[dict]:
+    """Tramos del resumen vertical cuando Claude no los eligió (decisiones anteriores a esta función):
+    un tramo corto por cada mejor momento, terminando poco después del remate. Primero el más
+    fuerte (gancho) y luego en el orden en que pasaron."""
+    by_id = {int(c["id"]): c for c in candidates}
+    guion = {int(g["candidato_id"]): g for g in decision.get("guion", []) if g["tipo"] == "clip"}
+    items = []
+    for m in decision.get("mejores_momentos", []):
+        cand = by_id.get(int(m["candidato_id"]))
+        if not cand:
+            continue
+        g = guion.get(int(m["candidato_id"]), {})
+        a, b = float(m["inicio"]), float(m["fin"])
+        mom = float(g.get("momento_clave") or 0)
+        end = min(b, mom + 5) if a < mom <= b else b
+        items.append({"candidato_id": int(m["candidato_id"]), "inicio": round(max(a, end - 30), 2),
+                      "fin": round(end, 2), "texto_en_pantalla": m.get("titulo", ""),
+                      "momento_clave": mom if a < mom <= b else 0.0,
+                      "_prio": int(g.get("prioridad") or 3), "_t": cand["start_ts"] + a})
+    if not items:
+        return []
+    hook = max(items, key=lambda it: (it["_prio"], -it["_t"]))
+    rest = sorted((it for it in items if it is not hook), key=lambda it: it["_t"])
+    out, used = [], 0.0
+    max_s = float(cfg["edicion"].get("resumen_tiktok_max_s", 240))
+    for it in [hook, *rest]:
+        if used >= max_s - 3:
+            break
+        out.append({k: v for k, v in it.items() if not k.startswith("_")})
+        used += it["fin"] - it["inicio"]
+    return out
+
+
+def render_tiktok_summary(cfg: dict, db: Database, session: dict, decision: dict, candidates: list[dict],
+                          progress=None) -> Path | None:
+    """Resumen vertical 1080x1920 de máximo edicion.resumen_tiktok_max_s: tramos cortos seguidos, sin
+    tarjetas; el texto en pantalla de cada tramo cuenta la historia."""
+    fecha = session["fecha"]
+    items = decision.get("resumen_tiktok") or tiktok_summary_items(cfg, decision, candidates)
+    if not items:
+        log.info("Sin tramos para el resumen de TikTok")
+        return None
+    folder = session_dir(cfg, fecha)
+    work = folder / "render_tiktok"
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    size = (1080, 1920)
+    by_id = {int(c["id"]): c for c in candidates}
+    guion = {int(g["candidato_id"]): g for g in decision.get("guion", []) if g["tipo"] == "clip"}
+    specs: list[tuple[dict, ClipSpec]] = []
+    for it in items:
+        cand = by_id.get(int(it["candidato_id"]))
+        spec = prepare_clip(cfg, db, session, cand, it["inicio"], it["fin"], it.get("texto_en_pantalla", "")) \
+            if cand else None
+        if not spec:
+            continue
+        g = guion.get(int(it["candidato_id"]), {})
+        apply_clip_effects(cfg, db, session, spec, cand,
+                           {**g, "momento_clave": it.get("momento_clave") or 0, "pantalla_dividida_con": 0}, by_id)
+        spec.whoosh = bool(specs)
+        specs.append((it, spec))
+    budget_sfx(cfg, [sp for _it, sp in specs])
+    sfx_lib = effects.sfx_library(cfg) if cfg["edicion"].get("efectos_sonido") else None
+    max_s = float(cfg["edicion"].get("resumen_tiktok_max_s", 240))
+    pieces, total = [], 0.0
+    try:
+        for n, (it, spec) in enumerate(specs):
+            remaining = max_s - total
+            if remaining < 3:
+                break
+            if spec.kept_duration > remaining:
+                spec.keep = trim_keep(spec.keep or [(0.0, spec.dur)], remaining)
+            if progress:
+                progress(f"resumen TikTok {n + 1}/{len(specs)}")
+            text = it.get("texto_en_pantalla") or spec.titulo
+            title_png = render_lower_third(text, spec.nombre, size, work / f"t_{n:03d}.png",
+                                           cfg["edicion"]["fuente"]) if text else None
+            out = work / f"{n:03d}.mp4"
+            try:
+                total += render_clip(cfg, spec, out, size, title_png, work=work, sfx_lib=sfx_lib)
+            except Exception as exc:  # noqa: BLE001
+                log.error("Falló el tramo %d del resumen TikTok: %s", n + 1, exc)
+                continue
+            pieces.append(out)
+        if not pieces:
+            return None
+        final = folder / f"resumen_tiktok_{fecha}.mp4"
+        concat_pieces(pieces, final)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    db.add_output(session["id"], "resumen_tiktok", str(final), {"segundos": round(total, 1)})
+    log.info("Resumen TikTok listo: %s (%.0f s)", final.name, total)
     return final
 
 

@@ -19,6 +19,9 @@
 <h2>Streamers</h2>
 <div class="grid" id="streamers"><div class="mut">No hay sesión activa.</div></div>
 
+<h2>Clips para TikTok (en vivo) <span class="small mut" id="clipsEstado"></span></h2>
+<div class="clips" id="clipsVivo"><div class="mut small">Se arman solos mientras se graba.</div></div>
+
 <div class="two">
   <div>
     <h2>Mejores candidatos (en vivo) <a class="small" id="linkSesion" href="#"></a></h2>
@@ -71,7 +74,11 @@ async function refresh() {
     Object.entries(tv.por_streamer).map(([k, v]) => `<div><b>${esc(k)}</b> (retraso ${v.retraso_s ?? "—"}s): ${esc(v.ultimo)}</div>`).join("") || "sin objetivos";
   document.getElementById("momentos").innerHTML = s.momentos.length ? "<table>" + s.momentos.map(m =>
       `<tr><td>#${m.rank}</td><td>${m.pareja ? '<span class="star">★</span> ' : ""}<b>${esc(m.nombre)}</b><br><span class="mut small">${m.desde}–${m.hasta}</span></td>
-       <td class="small">${esc(m.por_que)}</td><td>${m.score.toFixed(2)}</td></tr>`).join("") + "</table>" : "Aún no hay candidatos.";
+       <td class="small">${esc(m.por_que)}</td><td>${m.score.toFixed(2)}</td>
+       <td>${s.activa ? `<button class="sec small" title="Hacer un clip de TikTok de este momento" onclick="pedirClip(${m.id})">🎬 clip</button>` : ""}</td></tr>`).join("") + "</table>" : "Aún no hay candidatos.";
+  renderLiveClips(document.getElementById("clipsVivo"), s.clips_vivo_lista || []);
+  const cv = s.clips_vivo;
+  document.getElementById("clipsEstado").textContent = cv ? `· ${cv.estado}${cv.detalle ? ": " + cv.detalle : ""}` : "";
   const log = document.getElementById("log");
   const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
   log.textContent = s.log.join("\n");

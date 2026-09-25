@@ -27,3 +27,35 @@ async function copyText(text) {
   await navigator.clipboard.writeText(text);
   toast("Copiado al portapapeles");
 }
+
+// --- Clips para TikTok armados en vivo (Panel y página de la sesión) ---
+const LIVE_CLIPS = {};
+function clipText(c) { return [c.caption, (c.hashtags || []).join(" ")].filter(Boolean).join("\n\n"); }
+function renderLiveClips(el, clips) {
+  const key = JSON.stringify(clips);
+  if (el.dataset.key === key) return;          // sin cambios: no redibujar (el Panel refresca cada 3 s)
+  el.dataset.key = key;
+  if (!clips.length) { el.innerHTML = '<div class="mut small">Todavía no hay clips. Salen solos a medida que el chat explota.</div>'; return; }
+  clips.forEach(c => { LIVE_CLIPS[c.id] = c; });
+  el.innerHTML = clips.map(c => {
+    if (c.estado === "procesando") return `<div class="card clip"><div class="small"><span class="badge procesando">editando</span> ${esc(c.nombre)} · ${c.hora}</div></div>`;
+    if (c.estado === "error") return `<div class="card clip"><div class="small"><span class="badge error">error</span> ${esc(c.nombre)} · ${c.hora}</div><div class="small mut">${esc(c.nota)}</div></div>`;
+    if (c.estado === "descartado") return `<div class="card clip"><div class="small"><span class="badge sin_datos">descartado</span> ${esc(c.nombre)} · ${c.hora}</div><div class="small mut">${esc(c.nota)}</div></div>`;
+    return `<div class="card clip${c.subido ? " subido" : ""}">
+      ${c.thumb ? `<a href="${c.url}" target="_blank"><img src="${c.thumb}" alt=""></a>` : ""}
+      <div><b>${esc(c.titulo)}</b></div>
+      <div class="small mut">${esc(c.nombre)} · ${c.hora} · ${c.duracion ? Math.round(c.duracion) + " s" : ""} · ${c.origen === "claude" ? "Claude" : "auto"}</div>
+      <div class="small caption">${esc(clipText(c))}</div>
+      <div class="row" style="margin-top:6px">
+        <a class="btn" href="${c.url}" download>Descargar</a>
+        <button class="sec small" onclick="copiarCaption(${c.id})">Copiar caption</button>
+        <label class="row small" style="margin:0"><input type="checkbox" ${c.subido ? "checked" : ""} onchange="marcarSubido(${c.id}, this.checked)"> subido</label>
+      </div></div>`;
+  }).join("");
+}
+async function copiarCaption(id) { await copyText(clipText(LIVE_CLIPS[id])); toast("Caption copiado"); }
+async function marcarSubido(id, val) { try { await api(`/api/clips-vivo/${id}/subido`, { subido: val }); } catch (e) { toast(e.message); } }
+async function pedirClip(momentId) {
+  try { await api("/api/clips-vivo/crear", { moment_id: momentId }); toast("Clip en cola: sale apenas ese momento termine de grabarse"); }
+  catch (e) { toast(e.message); }
+}

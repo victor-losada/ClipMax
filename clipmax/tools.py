@@ -8,12 +8,14 @@ Orden de búsqueda de cada binario:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from .config import PROJECT_ROOT, resolve_path
@@ -86,18 +88,45 @@ def ytdlp_cmd() -> list[str]:
         return [path]
 
 
+_local = threading.local()
+
+
+@contextlib.contextmanager
+def background_priority():
+    """Los procesos que lance este hilo corren con prioridad baja (los clips en vivo no deben
+    quitarle CPU a la grabación, al chat ni a la transcripción en vivo)."""
+    prev = getattr(_local, "low", False)
+    _local.low = True
+    try:
+        yield
+    finally:
+        _local.low = prev
+
+
+def _low_priority(cmd: list[str]) -> tuple[list[str], int]:
+    """(comando, creationflags) con prioridad baja si el hilo lo pidió. En Linux/macOS se antepone
+    `nice` (preexec_fn obligaría a hacer fork de un proceso con muchos hilos)."""
+    if not getattr(_local, "low", False):
+        return cmd, POPEN_FLAGS
+    if IS_WINDOWS:
+        return cmd, POPEN_FLAGS | subprocess.BELOW_NORMAL_PRIORITY_CLASS
+    nice = shutil.which("nice")
+    return ([nice, "-n", "10", *cmd] if nice else cmd), POPEN_FLAGS
+
+
 def run(cmd: list[str], timeout: float | None = None, check: bool = True,
         capture: bool = True, input_bytes: bytes | None = None,
         cwd: str | Path | None = None) -> subprocess.CompletedProcess:
     """subprocess.run sin ventana de consola en Windows y con log de errores legible."""
     log.debug("Ejecutando: %s", " ".join(map(str, cmd)))
+    full, flags = _low_priority([str(c) for c in cmd])
     proc = subprocess.run(
-        [str(c) for c in cmd],
+        full,
         input=input_bytes,
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
         timeout=timeout,
-        creationflags=POPEN_FLAGS,
+        creationflags=flags,
         cwd=str(cwd) if cwd else None,
     )
     if check and proc.returncode != 0:

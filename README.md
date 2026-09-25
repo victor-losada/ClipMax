@@ -2,6 +2,8 @@
 
 ClipMax graba a los streamers del **Desafío 4** a la hora del evento, detecta sin modelos entrenados los momentos con más hype (picos de chat, menciones cruzadas y lo que se comenta en X) y deja que **Claude** decida qué es *lore*: sobre todo el **chipeo entre Westcol y Gear of Nos**. Con eso escribe el guion y los cortes, y **ffmpeg** monta un resumen diario de 10–20 minutos más un documento con los mejores momentos y captions para TikTok.
 
+Mientras graba, además, arma **clips verticales para TikTok** que descargas desde el Panel. Al cierre deja un **resumen vertical para TikTok de máximo 4 minutos** ([docs/CLIPS_TIKTOK.md](docs/CLIPS_TIKTOK.md)).
+
 Todo corre local y gratis (ffmpeg, yt-dlp, whisper.cpp, SQLite, Flask). Lo único que se paga es la API de Claude, con un tope mensual (por defecto $10), o puedes usar el **modo manual**, que genera un texto para pegar en claude.ai y no gasta API.
 
 ```
@@ -25,6 +27,8 @@ Guía completa: [docs/INSTALACION_WINDOWS.md](docs/INSTALACION_WINDOWS.md)
 - [Instalación paso a paso en Windows](docs/INSTALACION_WINDOWS.md)
 - [Prompt maestro y flujo diario con claude.ai](docs/PROMPT_MAESTRO.md). El prompt está en [`prompts/prompt_maestro.md`](prompts/prompt_maestro.md).
 - [Contexto del día desde X (Grok, pegar, cuándo)](docs/CONTEXTO_X.md)
+- [Clips para TikTok: en vivo, mejores momentos y resumen vertical](docs/CLIPS_TIKTOK.md)
+- Sincronía: Sesión → "Diagnóstico de sincronía" (o `python -m clipmax diagnostico`) mide si la voz y la imagen quedan alineadas en tu equipo.
 - [Configuración de ejemplo comentada](config.example.yaml)
 
 ## Estructura
@@ -43,15 +47,17 @@ clipmax/
   prompts.py       material del día + esquema JSON de salida
   brain.py         Claude: salida estructurada, fallback, presupuesto, modo manual
   editor.py        ffmpeg: silencios, encuadres, títulos, tarjetas, concat
+  liveclips.py     clips verticales para TikTok mientras se graba (Claude Haiku o reglas)
+  diagnostic.py    diagnóstico de sincronía audio/video con las grabaciones reales
   cards.py tts.py  gráficos (Pillow) y voz local opcional
   report.py        resumen .md/.html con captions
   pipeline.py      post-proceso por pasos, reanudable
   scheduler.py     horario, sesión en vivo, anti-suspensión, reanudación
   web/             interfaz Flask
   demo.py          demo de punta a punta con datos sintéticos
-prompts/prompt_maestro.md
+prompts/prompt_maestro.md   prompts/clip_vivo.md   prompts/grok_contexto_x.md
 arrancar.py        lanzador de los .bat (verifica la carpeta clipmax y ejecuta python -m clipmax)
-tests/             79 pruebas (incluye grabación y render reales con ffmpeg)
+tests/             93 pruebas (incluye grabación y render reales con ffmpeg)
 ```
 
 ## Pruebas

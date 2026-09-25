@@ -29,6 +29,14 @@
       <p><a href="{{ url_for('files', fecha=fecha, rel='resumen_' ~ fecha ~ '.mp4') }}" download>Descargar video</a>
         {% if files.md %} · <a href="{{ url_for('files', fecha=fecha, rel='resumen_' ~ fecha ~ '.md') }}" download>Resumen .md</a>{% endif %}</p>
       {% else %}<p class="mut">Todavía no hay video para este día.</p>{% endif %}
+      {% if files.tiktok_resumen %}<h3>Resumen para TikTok (vertical)</h3>
+      <video controls preload="metadata" style="width:220px;border-radius:8px" src="{{ url_for('files', fecha=fecha, rel='resumen_tiktok_' ~ fecha ~ '.mp4') }}"></video>
+      <p><a href="{{ url_for('files', fecha=fecha, rel='resumen_tiktok_' ~ fecha ~ '.mp4') }}" download>Descargar resumen TikTok</a></p>
+      {% if decision and decision.caption_resumen_tiktok %}<p class="small">Caption: {{ decision.caption_resumen_tiktok }}
+        <button class="sec small" onclick="copyText({{ decision.caption_resumen_tiktok|tojson }}).then(() => toast('Caption copiado'))">Copiar</button></p>{% endif %}{% endif %}
+      {% if live %}<h3>Clips en vivo ({{ live|selectattr('estado', 'equalto', 'listo')|list|length }})</h3>
+      <div class="clips" id="clipsVivo"></div>
+      <script>document.addEventListener("DOMContentLoaded", () => renderLiveClips(document.getElementById("clipsVivo"), {{ live|tojson }}));</script>{% endif %}
       {% if files.tiktok %}<h3>Clips para TikTok</h3><ul>
         {% for f in files.tiktok %}<li><a href="{{ url_for('files', fecha=fecha, rel='clips_tiktok/' ~ f) }}" download>{{ f }}</a></li>{% endfor %}</ul>{% endif %}
       <h3>Grabaciones</h3>
@@ -38,6 +46,10 @@
           <td class="mut">{{ (p.final_path or p.path).replace('\\', '/').split('/')[-1] }}</td></tr>
         {% else %}<tr><td colspan="5" class="mut">Sin grabaciones.</td></tr>{% endfor %}
       </table>
+      <h3>Diagnóstico de sincronía</h3>
+      <p class="small mut">Arma un clip de prueba con tus grabaciones y mide si la voz y la imagen quedan alineadas (tarda 1–2 minutos).</p>
+      <button class="sec" id="btnDiag" onclick="diagnostico()">Diagnóstico de sincronía</button>
+      <pre id="diag" class="small" style="white-space:pre-wrap;display:none"></pre>
       {% if runs %}<h3>Llamadas a Claude</h3>
       <table class="small"><tr><th>Tipo</th><th>Modelo</th><th>Tokens (in/out)</th><th>Costo</th></tr>
         {% for r in runs %}<tr><td>{{ r.tipo }}</td><td>{{ r.modelo }}</td><td>{{ r.input_tokens }} / {{ r.output_tokens }}</td><td>${{ '%.3f'|format(r.costo_usd) }}</td></tr>{% endfor %}
@@ -102,6 +114,13 @@ async function exportar() {
 async function copiarGrok() {
   try { const r = await api(`/api/prompt-grok/${FECHA}`); await copyText(r.texto); toast("Prompt copiado: pégalo en Grok y trae aquí su respuesta", 5000); }
   catch (e) { toast(e.message, 6000); }
+}
+async function diagnostico() {
+  const b = document.getElementById("btnDiag"), out = document.getElementById("diag");
+  b.disabled = true; b.textContent = "Midiendo…"; out.style.display = "block"; out.textContent = "Midiendo, espera 1–2 minutos…";
+  try { const r = await api(`/api/sesion/${FECHA}/diagnostico`, {}); out.textContent = r.texto; }
+  catch (e) { out.textContent = "Error: " + e.message; }
+  finally { b.disabled = false; b.textContent = "Diagnóstico de sincronía"; }
 }
 async function copiarPrompt() { const r = await api("/api/prompt-maestro"); await copyText(r.texto); }
 async function importar() {

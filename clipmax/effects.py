@@ -250,6 +250,9 @@ def write_subtitles(cfg: dict, words: list[tuple[float, float, str]], size: tupl
     fonts.mkdir(parents=True, exist_ok=True)
     if not (fonts / path.name).exists():
         shutil.copy2(path, fonts / path.name)
+    shift = float(cfg["edicion"].get("subtitulos_desfase_s") or 0.0)
+    if shift:
+        words = [(max(0.0, a + shift), max(0.0, b + shift), w) for a, b, w in words]
     ass = work / f"{name}.ass"
     ass.write_text(build_ass(words, size, family, bold, int(cfg["edicion"]["subtitulos_palabras"])),
                    encoding="utf-8")

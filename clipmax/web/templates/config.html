@@ -58,6 +58,15 @@
       <div><label>Silencio máx. (s)</label><input id="ed_sil" type="number" step="0.5" min="0.5" style="width:80px"></div>
     </div>
     <label class="row"><input type="checkbox" id="ed_tiktok"> Exportar clips verticales para TikTok de los mejores momentos</label>
+    <label class="row"><input type="checkbox" id="ed_tkres"> Resumen del día para TikTok (vertical, máximo <input id="ed_tkmax" type="number" min="30" max="600" style="width:70px"> s)</label>
+    <h3>Clips para TikTok en vivo</h3>
+    <label class="row"><input type="checkbox" id="cv_activo"> Armar clips mientras se graba (se descargan desde el Panel)</label>
+    <label class="row"><input type="checkbox" id="cv_claude"> Que Claude elija corte, título y caption (<span id="cv_modelo"></span>, ~$0.005 por clip)</label>
+    <div class="row">
+      <div><label>Máximo por hora</label><input id="cv_hora" type="number" min="0" max="60" style="width:70px"></div>
+      <div><label>Duración mín. (s)</label><input id="cv_min" type="number" min="5" max="170" style="width:70px"></div>
+      <div><label>Duración máx. (s)</label><input id="cv_max" type="number" min="10" max="180" style="width:70px"></div>
+    </div>
     <h3>Efectos</h3>
     <label class="row"><input type="checkbox" id="fx_subs"> Subtítulos dinámicos (la palabra que se dice se ilumina)
       <select id="fx_palabras" style="margin-left:6px"><option value="2">2 palabras</option><option value="3">3 palabras</option><option value="4">4 palabras</option></select></label>
@@ -65,6 +74,10 @@
     <label class="row"><input type="checkbox" id="fx_split"> Pantalla dividida cuando Claude muestra a los dos streamers a la vez</label>
     <label class="row"><input type="checkbox" id="fx_sfx"> Efectos de sonido · máximo <input id="fx_max" type="number" min="0" max="40" style="width:60px"> por video</label>
     <p class="small mut">Tus propios efectos: pon archivos .wav/.mp3 en la carpeta <code>sfx/</code> del proyecto; el nombre del archivo es el nombre que Claude puede usar.</p>
+    <label>Ajuste fino de sincronía (segundos; normalmente 0 · + = más tarde, − = más temprano)</label>
+    <div class="row"><span class="small">Audio</span> <input id="fx_daudio" type="number" step="0.05" min="-5" max="5" style="width:80px">
+      <span class="small">Subtítulos</span> <input id="fx_dsubs" type="number" step="0.05" min="-5" max="5" style="width:80px"></div>
+    <p class="small mut">Si la voz llega tarde respecto a la imagen, pon un número negativo en Audio. El valor exacto lo sugiere "Diagnóstico de sincronía" en la página de la sesión.</p>
     <label>Calidad máxima de grabación</label>
     <select id="gr_calidad"><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select>
   </div>
@@ -98,8 +111,13 @@ function fill() {
   $("ed_res").value = (Math.max(ed.ancho, ed.alto) >= 1920) ? "1920x1080" : "1280x720";
   $("ed_min").value = ed.duracion_min_min; $("ed_max").value = ed.duracion_max_min; $("ed_sil").value = ed.silencio_max_s;
   $("ed_tiktok").checked = ed.exportar_clips_tiktok;
+  $("ed_tkres").checked = ed.resumen_tiktok !== false; $("ed_tkmax").value = ed.resumen_tiktok_max_s || 240;
+  const cv = CFG.clips_vivo;
+  $("cv_activo").checked = cv.activo; $("cv_claude").checked = cv.usar_claude; $("cv_modelo").textContent = cv.modelo;
+  $("cv_hora").value = cv.max_por_hora; $("cv_min").value = cv.duracion_min_s; $("cv_max").value = cv.duracion_max_s;
   $("fx_subs").checked = ed.subtitulos; $("fx_palabras").value = String(ed.subtitulos_palabras);
   $("fx_zoom").checked = ed.zoom; $("fx_split").checked = ed.pantalla_dividida;
+  $("fx_daudio").value = ed.desfase_audio_s || 0; $("fx_dsubs").value = ed.subtitulos_desfase_s || 0;
   $("fx_sfx").checked = ed.efectos_sonido; $("fx_max").value = ed.sfx_max_por_video; $("gr_calidad").value = String(CFG.grabacion.calidad_max);
   CFG.streamers.forEach(s => addRow(s));
   pairOptions();
@@ -153,10 +171,15 @@ async function save() {
     ancho: vertical ? h : w, alto: vertical ? w : h, duracion_min_min: parseFloat($("ed_min").value),
     duracion_max_min: parseFloat($("ed_max").value), silencio_max_s: parseFloat($("ed_sil").value),
     exportar_clips_tiktok: $("ed_tiktok").checked,
+    resumen_tiktok: $("ed_tkres").checked, resumen_tiktok_max_s: parseInt($("ed_tkmax").value || "240"),
     subtitulos: $("fx_subs").checked, subtitulos_palabras: parseInt($("fx_palabras").value),
     zoom: $("fx_zoom").checked, pantalla_dividida: $("fx_split").checked,
-    efectos_sonido: $("fx_sfx").checked, sfx_max_por_video: parseInt($("fx_max").value || "0") });
+    efectos_sonido: $("fx_sfx").checked, sfx_max_por_video: parseInt($("fx_max").value || "0"),
+    desfase_audio_s: parseFloat($("fx_daudio").value || "0"), subtitulos_desfase_s: parseFloat($("fx_dsubs").value || "0") });
   cfg.grabacion.calidad_max = parseInt($("gr_calidad").value);
+  Object.assign(cfg.clips_vivo, { activo: $("cv_activo").checked, usar_claude: $("cv_claude").checked,
+    max_por_hora: parseInt($("cv_hora").value || "0"), duracion_min_s: parseInt($("cv_min").value || "15"),
+    duracion_max_s: parseInt($("cv_max").value || "60") });
   cfg.streamers = [...$("tbl").querySelectorAll("tr")].map(tr => ({
     ...JSON.parse(tr.dataset.extra || "{}"),
     activo: tr.querySelector(".f-activo").checked, nombre: tr.querySelector(".f-nombre").value.trim(),

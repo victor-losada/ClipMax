@@ -72,6 +72,9 @@ def _words_from_tokens(tokens: list, seg_start: float, seg_end: float) -> list[t
     dos tokens sale bien. Si los tiempos no son coherentes, se devuelve [] y luego se
     estiman por proporción.
     """
+    dtw = _words_from_dtw(tokens, seg_start, seg_end)
+    if dtw:
+        return dtw
     words: list[tuple[float, float, str]] = []
     buf, w0, w1 = b"", None, None
 
@@ -100,6 +103,44 @@ def _words_from_tokens(tokens: list, seg_start: float, seg_end: float) -> list[t
     return words if ok else []
 
 
+def _words_from_dtw(tokens: list, seg_start: float, seg_end: float) -> list[tuple[float, float, str]]:
+    """Palabras con los tiempos DTW de whisper (`-dtw`), mucho más precisos que los de -ojf solo.
+
+    Medido con voz de tiempos conocidos: los tiempos por token sin DTW se desvían de forma
+    errática hasta ±1 s (subtítulos corridos); con DTW, `t_dtw` del último token de cada palabra
+    cae cerca del FINAL de la palabra (mediana 0.15 s). Así que: fin = t_dtw del último token,
+    inicio = fin de la palabra anterior (o una duración estimada para la primera).
+    """
+    groups: list[list] = []  # [bytes, t_dtw del último token]
+    for tok in tokens or []:
+        raw = str(tok.get("text", ""))
+        if raw.startswith("[_") and raw.endswith("]"):
+            continue
+        t = tok.get("t_dtw")
+        if t is None or float(t) < 0:
+            return []
+        b = raw.encode("utf-8", "surrogateescape")
+        if b.startswith(b" ") or not groups:
+            groups.append([b, float(t) / 100.0])
+        else:
+            groups[-1][0] += b
+            groups[-1][1] = float(t) / 100.0
+    words: list[tuple[float, float, str]] = []
+    prev_end = seg_start
+    for b, end in groups:
+        text = b.decode("utf-8", "replace").strip()
+        if not text:
+            continue
+        end = min(max(end, prev_end), seg_end + 0.5)
+        # Empieza donde terminó la anterior, salvo que haya una pausa: entonces se usa la duración
+        # típica según el largo de la palabra (si no, tras un silencio se iluminaría antes de tiempo).
+        start = max(prev_end, end - min(1.0, 0.075 * len(text) + 0.2))
+        start = min(start, max(prev_end, end - 0.05))
+        words.append((round(start, 3), round(end, 3), text))
+        prev_end = end
+    return words
+
+
 def parse_whisper_json(raw: bytes) -> list[Segment]:
     """Lee el JSON de `whisper-cli -oj/-ojf`. Tolera UTF-8 cortado entre tokens."""
     data = json.loads(raw.decode("utf-8", "surrogateescape"), strict=False)
@@ -113,11 +154,27 @@ def parse_whisper_json(raw: bytes) -> list[Segment]:
     return segs
 
 
+_WHISPER_LOCK = threading.Lock()
+
+# Nombre del modelo (ggml-<x>.bin) -> preset de alineación DTW de whisper.cpp.
+_DTW_PRESETS = ["large.v3.turbo", "large.v3", "large.v2", "large.v1", "medium.en", "medium",
+                "small.en", "small", "base.en", "base", "tiny.en", "tiny"]
+
+
+def dtw_preset(model: Path) -> str | None:
+    """'ggml-small.bin' -> 'small'; 'ggml-large-v3-turbo-q5_0.bin' -> 'large.v3.turbo'."""
+    name = model.stem.lower().removeprefix("ggml-").replace("-", ".").replace("_", ".")
+    for p in _DTW_PRESETS:
+        if name == p or name.startswith(p + "."):
+            return p
+    return None
+
+
 class WhisperTranscriber:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.tcfg = cfg["transcripcion"]
-        self._lock = threading.Lock()  # un whisper a la vez: la CPU es el cuello de botella
+        self._lock = _WHISPER_LOCK  # un whisper a la vez en todo ClipMax: la CPU es el cuello de botella
 
     def model_path(self, which: str) -> Path:
         key = "modelo_vivo" if which == "vivo" else "modelo_calidad"
@@ -137,28 +194,43 @@ class WhisperTranscriber:
 
     def transcribe_wav(self, wav: Path, which: str = "calidad") -> list[Segment]:
         out_base = wav.with_suffix("")
+        model = self.model_path(which)
         cmd = [
-            tools.whisper_cli(self.cfg), "-m", str(self.model_path(which)), "-f", str(wav),
+            tools.whisper_cli(self.cfg), "-m", str(model), "-f", str(wav),
             "-l", self.tcfg["idioma"], "-t", str(int(self.tcfg["hilos"])),
             "-oj", "-ojf", "-of", str(out_base), "-np",  # -ojf: tiempos por token -> subtítulos
         ]
+        preset = dtw_preset(model) if which != "vivo" else None
+        if preset:
+            # DTW da tiempos por palabra precisos (subtítulos al compás de la voz). whisper.cpp no
+            # calcula DTW con flash attention (activada por defecto), por eso -nfa.
+            cmd += ["-dtw", preset, "-nfa"]
         if self.tcfg.get("prompt_inicial"):
             cmd += ["--prompt", self.tcfg["prompt_inicial"]]
         vad = self.tcfg.get("vad_modelo")
         if vad and resolve_path(vad).exists():
             cmd += ["--vad", "-vm", str(resolve_path(vad))]
         with self._lock:
-            try:
-                tools.run(cmd, timeout=3600)
-            except RuntimeError as exc:
-                if "-ojf" not in cmd:
-                    raise
-                # whisper-cli antiguo sin tiempos por token: se transcribe igual y los subtítulos
-                # usan tiempos estimados por palabra.
-                log.warning("whisper-cli no aceptó -ojf (%s); reintento sin tiempos por palabra",
-                            str(exc).splitlines()[-1][:120] if str(exc) else exc)
-                cmd.remove("-ojf")
-                tools.run(cmd, timeout=3600)
+            while True:
+                try:
+                    tools.run(cmd, timeout=3600)
+                    break
+                except RuntimeError as exc:
+                    why = str(exc).splitlines()[-1][:120] if str(exc) else str(exc)
+                    if "-dtw" in cmd:
+                        # whisper-cli sin DTW (o sin -nfa): tiempos por token normales.
+                        log.warning("whisper-cli no aceptó -dtw (%s); reintento sin alineación DTW", why)
+                        i = cmd.index("-dtw")
+                        del cmd[i:i + 2]
+                        if "-nfa" in cmd:
+                            cmd.remove("-nfa")
+                    elif "-ojf" in cmd:
+                        # whisper-cli antiguo sin tiempos por token: se transcribe igual y los
+                        # subtítulos usan tiempos estimados por palabra.
+                        log.warning("whisper-cli no aceptó -ojf (%s); reintento sin tiempos por palabra", why)
+                        cmd.remove("-ojf")
+                    else:
+                        raise
         json_path = out_base.with_suffix(".json")
         try:
             return clean_segments(parse_whisper_json(json_path.read_bytes()))
