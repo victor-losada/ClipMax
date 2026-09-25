@@ -176,6 +176,15 @@ def cmd_prompt_grok(args) -> None:
     print(grok_prompt(cfg, args.fecha or today_str(cfg), db))
 
 
+def cmd_diagnostico(args) -> None:
+    from .diagnostic import run
+    from .timeutil import today_str
+
+    store, db = _boot(args.config)
+    cfg = store.get()
+    print(run(cfg, db, args.fecha or today_str(cfg)))
+
+
 def cmd_snapshot(args) -> None:
     from .config import get_streamer
     from .kick import KickClient
@@ -347,6 +356,10 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("doctor", help="verifica la instalación")
     p.add_argument("--sin-red", action="store_true", help="no consulta la API de Kick")
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("diagnostico", help="mide si la edición conserva la sincronía audio/video")
+    p.add_argument("--fecha", help="AAAA-MM-DD (por defecto, hoy)")
+    p.set_defaults(func=cmd_diagnostico)
 
     p = sub.add_parser("descargar", help="descarga whisper.cpp, modelos y ffmpeg")
     p.add_argument("--modelo", nargs="*", help="modelos de whisper (base, small, medium, large-v3-turbo-q5_0…)")

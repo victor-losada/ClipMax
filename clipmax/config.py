@@ -157,6 +157,9 @@ DEFAULTS: dict[str, Any] = {
         "sfx_volumen": 0.55,
         "sfx_transicion": "whoosh",    # al entrar a un clip después de una tarjeta ("" = ninguno)
         "sfx_max_por_video": 10,       # "uno que otro": tope de efectos en todo el resumen
+        # Ajustes finos de sincronía (segundos; normalmente 0). + = más tarde, - = más temprano.
+        "desfase_audio_s": 0.0,        # si en tus videos la voz llega antes/después que la imagen
+        "subtitulos_desfase_s": 0.0,   # si los subtítulos salen antes/después de la voz
     },
     "web": {"host": "127.0.0.1", "puerto": 5000, "abrir_navegador": True},
 }
@@ -299,6 +302,13 @@ def validate(cfg: dict) -> dict:
     if float(ed["duracion_min_min"]) > float(ed["duracion_max_min"]):
         raise ConfigError("edicion.duracion_min_min no puede ser mayor que duracion_max_min")
     # Resolución coherente con el formato (pares, como exige yuv420p).
+    for key in ("desfase_audio_s", "subtitulos_desfase_s"):
+        try:
+            ed[key] = round(float(ed.get(key) or 0.0), 3)
+        except (TypeError, ValueError):
+            raise ConfigError(f"edicion.{key} debe ser un número de segundos (ej. -0.3)") from None
+        if abs(ed[key]) > 5:
+            raise ConfigError(f"edicion.{key} debe estar entre -5 y 5 segundos")
     ed["ancho"] = int(ed["ancho"]) // 2 * 2
     ed["alto"] = int(ed["alto"]) // 2 * 2
     if ed["formato"] == "vertical" and ed["ancho"] > ed["alto"]:

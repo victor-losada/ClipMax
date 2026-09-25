@@ -38,6 +38,10 @@
           <td class="mut">{{ (p.final_path or p.path).replace('\\', '/').split('/')[-1] }}</td></tr>
         {% else %}<tr><td colspan="5" class="mut">Sin grabaciones.</td></tr>{% endfor %}
       </table>
+      <h3>Diagnóstico de sincronía</h3>
+      <p class="small mut">Arma un clip de prueba con tus grabaciones y mide si la voz y la imagen quedan alineadas (tarda 1–2 minutos).</p>
+      <button class="sec" id="btnDiag" onclick="diagnostico()">Diagnóstico de sincronía</button>
+      <pre id="diag" class="small" style="white-space:pre-wrap;display:none"></pre>
       {% if runs %}<h3>Llamadas a Claude</h3>
       <table class="small"><tr><th>Tipo</th><th>Modelo</th><th>Tokens (in/out)</th><th>Costo</th></tr>
         {% for r in runs %}<tr><td>{{ r.tipo }}</td><td>{{ r.modelo }}</td><td>{{ r.input_tokens }} / {{ r.output_tokens }}</td><td>${{ '%.3f'|format(r.costo_usd) }}</td></tr>{% endfor %}
@@ -102,6 +106,13 @@ async function exportar() {
 async function copiarGrok() {
   try { const r = await api(`/api/prompt-grok/${FECHA}`); await copyText(r.texto); toast("Prompt copiado: pégalo en Grok y trae aquí su respuesta", 5000); }
   catch (e) { toast(e.message, 6000); }
+}
+async function diagnostico() {
+  const b = document.getElementById("btnDiag"), out = document.getElementById("diag");
+  b.disabled = true; b.textContent = "Midiendo…"; out.style.display = "block"; out.textContent = "Midiendo, espera 1–2 minutos…";
+  try { const r = await api(`/api/sesion/${FECHA}/diagnostico`, {}); out.textContent = r.texto; }
+  catch (e) { out.textContent = "Error: " + e.message; }
+  finally { b.disabled = false; b.textContent = "Diagnóstico de sincronía"; }
 }
 async function copiarPrompt() { const r = await api("/api/prompt-maestro"); await copyText(r.texto); }
 async function importar() {

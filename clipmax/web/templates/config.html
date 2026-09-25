@@ -65,6 +65,10 @@
     <label class="row"><input type="checkbox" id="fx_split"> Pantalla dividida cuando Claude muestra a los dos streamers a la vez</label>
     <label class="row"><input type="checkbox" id="fx_sfx"> Efectos de sonido · máximo <input id="fx_max" type="number" min="0" max="40" style="width:60px"> por video</label>
     <p class="small mut">Tus propios efectos: pon archivos .wav/.mp3 en la carpeta <code>sfx/</code> del proyecto; el nombre del archivo es el nombre que Claude puede usar.</p>
+    <label>Ajuste fino de sincronía (segundos; normalmente 0 · + = más tarde, − = más temprano)</label>
+    <div class="row"><span class="small">Audio</span> <input id="fx_daudio" type="number" step="0.05" min="-5" max="5" style="width:80px">
+      <span class="small">Subtítulos</span> <input id="fx_dsubs" type="number" step="0.05" min="-5" max="5" style="width:80px"></div>
+    <p class="small mut">Si la voz llega tarde respecto a la imagen, pon un número negativo en Audio. El valor exacto lo sugiere "Diagnóstico de sincronía" en la página de la sesión.</p>
     <label>Calidad máxima de grabación</label>
     <select id="gr_calidad"><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option></select>
   </div>
@@ -100,6 +104,7 @@ function fill() {
   $("ed_tiktok").checked = ed.exportar_clips_tiktok;
   $("fx_subs").checked = ed.subtitulos; $("fx_palabras").value = String(ed.subtitulos_palabras);
   $("fx_zoom").checked = ed.zoom; $("fx_split").checked = ed.pantalla_dividida;
+  $("fx_daudio").value = ed.desfase_audio_s || 0; $("fx_dsubs").value = ed.subtitulos_desfase_s || 0;
   $("fx_sfx").checked = ed.efectos_sonido; $("fx_max").value = ed.sfx_max_por_video; $("gr_calidad").value = String(CFG.grabacion.calidad_max);
   CFG.streamers.forEach(s => addRow(s));
   pairOptions();
@@ -155,7 +160,8 @@ async function save() {
     exportar_clips_tiktok: $("ed_tiktok").checked,
     subtitulos: $("fx_subs").checked, subtitulos_palabras: parseInt($("fx_palabras").value),
     zoom: $("fx_zoom").checked, pantalla_dividida: $("fx_split").checked,
-    efectos_sonido: $("fx_sfx").checked, sfx_max_por_video: parseInt($("fx_max").value || "0") });
+    efectos_sonido: $("fx_sfx").checked, sfx_max_por_video: parseInt($("fx_max").value || "0"),
+    desfase_audio_s: parseFloat($("fx_daudio").value || "0"), subtitulos_desfase_s: parseFloat($("fx_dsubs").value || "0") });
   cfg.grabacion.calidad_max = parseInt($("gr_calidad").value);
   cfg.streamers = [...$("tbl").querySelectorAll("tr")].map(tr => ({
     ...JSON.parse(tr.dataset.extra || "{}"),

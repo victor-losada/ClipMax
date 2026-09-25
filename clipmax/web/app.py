@@ -197,6 +197,16 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
     def api_master_prompt():
         return jsonify({"texto": prompts.master_prompt(store.get())})
 
+    @app.post("/api/sesion/<fecha>/diagnostico")
+    def api_diagnostic(fecha: str):
+        from .. import diagnostic
+
+        _session_or_404(fecha)
+        try:
+            return jsonify({"texto": diagnostic.run(store.get(), db, fecha)})
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"No se pudo diagnosticar: {exc}")
+
     @app.get("/api/prompt-grok/<fecha>")
     def api_grok_prompt(fecha: str):
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", fecha):

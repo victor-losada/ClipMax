@@ -164,6 +164,10 @@ edicion:
   sfx_volumen: 0.55
   sfx_transicion: "whoosh"    # sonido al entrar a un clip después de una tarjeta ("" = ninguno)
   sfx_max_por_video: 10       # "uno que otro": tope de efectos en todo el resumen
+  # Ajuste fino de sincronía en segundos (normalmente 0; + = más tarde, - = más temprano).
+  # "Diagnóstico de sincronía" (página de la sesión) mide el desfase y sugiere el valor.
+  desfase_audio_s: 0.0
+  subtitulos_desfase_s: 0.0
 
 web:
   host: "127.0.0.1"

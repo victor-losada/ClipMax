@@ -323,6 +323,16 @@ def render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int],
 SYNC_AUDIO = "aresample=async=1:first_pts=0"
 
 
+def audio_shift(cfg: dict) -> str:
+    """Filtro extra para edicion.desfase_audio_s: + retrasa la voz, - la adelanta."""
+    shift = float(cfg["edicion"].get("desfase_audio_s") or 0.0)
+    if shift > 0:
+        return f",adelay=delays={int(round(shift * 1000))}:all=1"
+    if shift < 0:
+        return f",atrim=start={-shift:.3f},asetpts=PTS-STARTPTS"
+    return ""
+
+
 def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int], title_png: Path | None,
                  work: Path | None, sfx_lib: dict | None, effects_on: bool) -> float:
     ed = cfg["edicion"]
@@ -334,7 +344,9 @@ def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int]
     kept = spec.kept_duration
     keep = spec.keep or [(0.0, spec.dur)]
     k = len(keep)
-    inputs: list[list[str]] = [["-ss", f"{spec.file_start:.3f}", "-t", f"{spec.dur:.3f}", "-i", spec.path]]
+    # Si se adelanta el audio (desfase negativo) hace falta leer ese poco más de la fuente.
+    extra = max(0.0, -float(ed.get("desfase_audio_s") or 0.0))
+    inputs: list[list[str]] = [["-ss", f"{spec.file_start:.3f}", "-t", f"{spec.dur + extra:.3f}", "-i", spec.path]]
 
     def add_input(args: list[str]) -> int:
         inputs.append(args)
@@ -348,7 +360,7 @@ def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int]
     # start_time/first_pts=0 recortan lo negativo y rellenan el hueco inicial.
     # fps además baja los 60 fps de Kick a los de salida antes del zoom (si no, cámara lenta).
     parts = [f"[0:v]fps={fps}:start_time=0,split={k}" + "".join(f"[vs{i}]" for i in range(k)),
-             f"[0:a]{SYNC_AUDIO},asplit={k}" + "".join(f"[as{i}]" for i in range(k))]
+             f"[0:a]{SYNC_AUDIO}{audio_shift(cfg)},asplit={k}" + "".join(f"[as{i}]" for i in range(k))]
     for i, (a, b) in enumerate(keep):
         ln = b - a
         fade = min(0.04, ln / 4)
