@@ -200,6 +200,14 @@ class Pipeline:
         if self.cfg["edicion"]["exportar_clips_tiktok"]:
             clips = editor.export_tiktok_clips(self.cfg, self.db, self.session, decision, candidates, self.progress)
             msg += f" + {len(clips)} clips TikTok"
+        if self.cfg["edicion"].get("resumen_tiktok", True):
+            try:
+                tk = editor.render_tiktok_summary(self.cfg, self.db, self.session, decision, candidates, self.progress)
+                if tk:
+                    msg += " + resumen TikTok"
+            except Exception as exc:  # noqa: BLE001 - el resumen principal ya está; esto es un extra
+                log.error("Falló el resumen para TikTok: %s", exc)
+                msg += " (resumen TikTok falló, ver registro)"
         return msg
 
     def reportar(self) -> str:

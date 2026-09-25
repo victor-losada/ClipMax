@@ -161,3 +161,22 @@ Las narraciones son tarjetas con el fotograma del clip siguiente desenfocado, y 
 - **Espacio en disco.** A 720p son ≈ 1.8 GB por hora por streamer (≈ 15 GB por streamer al día). Con decenas de streamers usa 480p (`calidad_max`) o desactiva a los secundarios. `doctor` calcula lo que necesitas.
 - **CPU de whisper.** Si el transcriptor en vivo se atrasa, salta al presente (lo verás en el panel). Con GPU NVIDIA: `python -m clipmax descargar --cuda`.
 - **Sincronía chat/video.** La latencia HLS es de unos segundos; las ventanas tienen margen (50 s antes, 25 s después) y existe `desfase_chat_s` para ajuste fino.
+
+## 10. Clips en vivo, resumen para TikTok y sincronía
+
+**Clips en vivo** (`liveclips.py`). `LiveClipper` es un hilo más de la sesión (lo arranca `SessionManager.start`). Cada `clips_vivo.intervalo_s` toma los mejores momentos de la detección en vivo, ya terminados y grabados (35 s de margen), que no se solapen con un clip ya hecho. Luego:
+
+1. Transcribe el tramo con el modelo de calidad (queda en la base de datos y el cierre la reutiliza).
+2. Pide a Claude, con `curate_live_clip`, salida estructurada `CLIP_SCHEMA` y `prompts/clip_vivo.md`: si se publica, corte, remate, título, caption, hashtags y efecto. El modelo es `clips_vivo.modelo`, Haiku por defecto (~$0.005 por clip), con el mismo control de presupuesto mensual. Sin API, o sin presupuesto, usa reglas: el remate es el pico del chat menos la reacción.
+3. Renderiza en 1080x1920 con `editor.render_clip`.
+
+Tope por hora. El botón 🎬 del Panel encola un momento concreto y salta ese tope. `tools.background_priority()` baja la prioridad de whisper/ffmpeg en ese hilo, y un único candado de whisper evita dos transcripciones a la vez.
+
+**Resumen para TikTok** (`editor.render_tiktok_summary`). Toma los tramos de `resumen_tiktok` de la decisión o, si no hay, los arma de los mejores momentos: gancho primero y luego cronológico. Los renderiza en vertical con el texto en pantalla, sin tarjetas, y los une con un tope de `edicion.resumen_tiktok_max_s`.
+
+**Sincronía y tiempos** (medidos con grabaciones reales de Kick y ffmpeg 9):
+- Kick transmite a 60 fps. Todo el render pasa primero a los fps de salida (el zoompan renumeraba fotogramas: cámara lenta).
+- Tras `-ss`, audio y video se alinean al cero común del corte (`fps=…:start_time=0`, `aresample=async=1:first_pts=0`), no cada pista por su cuenta.
+- Al conectarse a un directo HLS, ffmpeg baja de golpe 8–18 s ya emitidos. El grabador lo mide a los 20 s y corrige la hora del segundo 0 del archivo; sin eso, los clips salían corridos respecto al chat.
+- Subtítulos: tiempos por palabra con DTW de whisper (`-dtw <modelo> -nfa`). Sin DTW, los tiempos por token se desvían hasta ±1 s.
+- `diagnostic.py` arma un clip de prueba con las grabaciones del usuario y compara la curva de movimiento del video y la envolvente del audio contra la fuente. Detecta desfases de 30 ms en adelante y sugiere `edicion.desfase_audio_s`.

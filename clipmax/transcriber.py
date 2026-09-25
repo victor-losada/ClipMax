@@ -154,6 +154,8 @@ def parse_whisper_json(raw: bytes) -> list[Segment]:
     return segs
 
 
+_WHISPER_LOCK = threading.Lock()
+
 # Nombre del modelo (ggml-<x>.bin) -> preset de alineación DTW de whisper.cpp.
 _DTW_PRESETS = ["large.v3.turbo", "large.v3", "large.v2", "large.v1", "medium.en", "medium",
                 "small.en", "small", "base.en", "base", "tiny.en", "tiny"]
@@ -172,7 +174,7 @@ class WhisperTranscriber:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.tcfg = cfg["transcripcion"]
-        self._lock = threading.Lock()  # un whisper a la vez: la CPU es el cuello de botella
+        self._lock = _WHISPER_LOCK  # un whisper a la vez en todo ClipMax: la CPU es el cuello de botella
 
     def model_path(self, which: str) -> Path:
         key = "modelo_vivo" if which == "vivo" else "modelo_calidad"

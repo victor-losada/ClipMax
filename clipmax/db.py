@@ -142,6 +142,28 @@ CREATE TABLE IF NOT EXISTS outputs (
     created_at REAL NOT NULL,
     meta_json  TEXT NOT NULL DEFAULT '{}'
 );
+
+-- Clips para TikTok que se arman mientras se graba (clipmax/liveclips.py)
+CREATE TABLE IF NOT EXISTS live_clips (
+    id            INTEGER PRIMARY KEY,
+    session_id    INTEGER NOT NULL,
+    slug          TEXT NOT NULL,
+    start_ts      REAL NOT NULL,     -- tramo candidato (hora de pared)
+    end_ts        REAL NOT NULL,
+    score         REAL NOT NULL DEFAULT 0,
+    estado        TEXT NOT NULL DEFAULT 'procesando',   -- procesando|listo|descartado|error
+    origen        TEXT NOT NULL DEFAULT '',             -- claude|auto
+    titulo        TEXT NOT NULL DEFAULT '',
+    caption       TEXT NOT NULL DEFAULT '',
+    hashtags_json TEXT NOT NULL DEFAULT '[]',
+    path          TEXT,
+    thumb         TEXT,
+    duracion      REAL,
+    nota          TEXT NOT NULL DEFAULT '',
+    subido        INTEGER NOT NULL DEFAULT 0,
+    created_at    REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_live_clips ON live_clips(session_id, slug, start_ts);
 """
 
 
@@ -465,6 +487,45 @@ class Database:
 
     def claude_runs(self, limit: int = 50) -> list[dict]:
         return self.query("SELECT * FROM claude_runs ORDER BY created_at DESC LIMIT ?", (limit,))
+
+    # -- clips en vivo -----------------------------------------------------------
+    def add_live_clip(self, **fields: Any) -> int:
+        fields.setdefault("created_at", time.time())
+        if "hashtags" in fields:
+            fields["hashtags_json"] = json.dumps(fields.pop("hashtags"), ensure_ascii=False)
+        cols = ", ".join(fields)
+        cur = self.execute(f"INSERT INTO live_clips ({cols}) VALUES ({','.join('?' * len(fields))})",
+                           fields.values())
+        return int(cur.lastrowid)
+
+    def update_live_clip(self, clip_id: int, **fields: Any) -> None:
+        if "hashtags" in fields:
+            fields["hashtags_json"] = json.dumps(fields.pop("hashtags"), ensure_ascii=False)
+        cols = ", ".join(f"{k}=?" for k in fields)
+        self.execute(f"UPDATE live_clips SET {cols} WHERE id=?", (*fields.values(), clip_id))
+
+    def live_clips(self, session_id: int, estados: Iterable[str] | None = None,
+                   limit: int | None = None) -> list[dict]:
+        sql = "SELECT * FROM live_clips WHERE session_id=?"
+        params: list[Any] = [session_id]
+        if estados:
+            estados = list(estados)
+            sql += f" AND estado IN ({','.join('?' * len(estados))})"
+            params += estados
+        sql += " ORDER BY created_at DESC"
+        if limit:
+            sql += " LIMIT ?"
+            params.append(limit)
+        rows = self.query(sql, params)
+        for r in rows:
+            r["hashtags"] = json.loads(r.pop("hashtags_json") or "[]")
+        return rows
+
+    def live_clip(self, clip_id: int) -> dict | None:
+        row = self.query_one("SELECT * FROM live_clips WHERE id=?", (clip_id,))
+        if row:
+            row["hashtags"] = json.loads(row.pop("hashtags_json") or "[]")
+        return row
 
     # -- salidas -----------------------------------------------------------------
     def add_output(self, session_id: int, tipo: str, path: str, meta: dict | None = None) -> None:

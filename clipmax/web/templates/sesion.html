@@ -29,6 +29,14 @@
       <p><a href="{{ url_for('files', fecha=fecha, rel='resumen_' ~ fecha ~ '.mp4') }}" download>Descargar video</a>
         {% if files.md %} · <a href="{{ url_for('files', fecha=fecha, rel='resumen_' ~ fecha ~ '.md') }}" download>Resumen .md</a>{% endif %}</p>
       {% else %}<p class="mut">Todavía no hay video para este día.</p>{% endif %}
+      {% if files.tiktok_resumen %}<h3>Resumen para TikTok (vertical)</h3>
+      <video controls preload="metadata" style="width:220px;border-radius:8px" src="{{ url_for('files', fecha=fecha, rel='resumen_tiktok_' ~ fecha ~ '.mp4') }}"></video>
+      <p><a href="{{ url_for('files', fecha=fecha, rel='resumen_tiktok_' ~ fecha ~ '.mp4') }}" download>Descargar resumen TikTok</a></p>
+      {% if decision and decision.caption_resumen_tiktok %}<p class="small">Caption: {{ decision.caption_resumen_tiktok }}
+        <button class="sec small" onclick="copyText({{ decision.caption_resumen_tiktok|tojson }}).then(() => toast('Caption copiado'))">Copiar</button></p>{% endif %}{% endif %}
+      {% if live %}<h3>Clips en vivo ({{ live|selectattr('estado', 'equalto', 'listo')|list|length }})</h3>
+      <div class="clips" id="clipsVivo"></div>
+      <script>document.addEventListener("DOMContentLoaded", () => renderLiveClips(document.getElementById("clipsVivo"), {{ live|tojson }}));</script>{% endif %}
       {% if files.tiktok %}<h3>Clips para TikTok</h3><ul>
         {% for f in files.tiktok %}<li><a href="{{ url_for('files', fecha=fecha, rel='clips_tiktok/' ~ f) }}" download>{{ f }}</a></li>{% endfor %}</ul>{% endif %}
       <h3>Grabaciones</h3>

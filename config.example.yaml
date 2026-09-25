@@ -151,6 +151,8 @@ edicion:
   voz_sapi: ""                # parte del nombre, p. ej. "Sabina"
   fuente: ""                  # ruta a un .ttf; vacío = Segoe UI Bold / Arial Bold
   exportar_clips_tiktok: true # un clip vertical por cada "mejor momento"
+  resumen_tiktok: true        # además del resumen horizontal, uno vertical para TikTok…
+  resumen_tiktok_max_s: 240   # …de máximo 4 minutos
   titulos_en_pantalla: true
   # Efectos
   subtitulos: true            # subtítulos dinámicos: la palabra que se dice se ilumina
@@ -168,6 +170,21 @@ edicion:
   # "Diagnóstico de sincronía" (página de la sesión) mide el desfase y sugiere el valor.
   desfase_audio_s: 0.0
   subtitulos_desfase_s: 0.0
+
+# -----------------------------------------------------------------------------
+# Clips para TikTok MIENTRAS se graba (Panel -> "Clips para TikTok (en vivo)").
+# Se toman los mejores momentos que va detectando el sistema; cuando uno termina de
+# grabarse se transcribe, Claude elige corte/título/caption y se renderiza en vertical.
+# -----------------------------------------------------------------------------
+clips_vivo:
+  activo: true
+  usar_claude: true           # false = reglas automáticas (sin costo)
+  modelo: "claude-haiku-4-5"  # ~$0.005 por clip (unos $2-3 al mes). Un modelo mayor cuesta ~10x.
+  max_por_hora: 6             # tope de clips automáticos por hora (el botón 🎬 del Panel no cuenta)
+  top_candidatos: 12          # solo se miran los N mejores momentos detectados hasta ahora
+  duracion_min_s: 15
+  duracion_max_s: 60
+  intervalo_s: 60             # cada cuánto revisa si hay un momento listo
 
 web:
   host: "127.0.0.1"

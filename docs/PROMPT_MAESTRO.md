@@ -46,7 +46,9 @@ python -m clipmax importar-respuesta respuesta.json --fecha 2026-09-23
   ],
   "mejores_momentos": [{"candidato_id": 12, "inicio": 8.5, "fin": 61.0, "titulo": "...", "por_que_importa": "...", "captions_tiktok": ["..."], "hashtags": ["#Desafio4"]}],
   "descartados": [{"candidato_id": 3, "motivo": "gameplay sin conversación"}],
-  "notas_editor": "..."
+  "notas_editor": "...",
+  "resumen_tiktok": [{"candidato_id": 12, "inicio": 30.0, "fin": 52.0, "texto_en_pantalla": "WESTCOL LO DIJO EN VIVO", "momento_clave": 44.0}],
+  "caption_resumen_tiktok": "..."
 }
 ```
 
@@ -55,6 +57,8 @@ python -m clipmax importar-respuesta respuesta.json --fecha 2026-09-23
 - `momento_clave` es el segundo del remate: ahí entran el zoom suave y el `efecto_sonido` (si Claude eligió uno).
 - `pantalla_dividida_con` muestra a la par a otro candidato del "mismo suceso" (por ejemplo, Gear reaccionando mientras Westcol habla).
 - Si pegas una respuesta vieja sin estos campos, funciona igual: se toman como 0 o vacíos.
+- `resumen_tiktok` arma el resumen vertical del día (máximo 4 minutos, `edicion.resumen_tiktok_max_s`): tramos cortos seguidos, sin tarjetas, con el texto en pantalla contando la historia. Si la respuesta no lo trae (decisiones viejas), ClipMax lo arma solo a partir de los mejores momentos, con el más fuerte primero.
+- `mejores_momentos` ahora pide de 8 a 15: cada uno sale como clip vertical en `clips_tiktok/`.
 - `lore_para_manana` se guarda y al día siguiente vuelve como memoria, para que la historia tenga continuidad. El material incluye la *Historia de días anteriores* (lore más un resumen del contexto de X de los últimos 3 días) y los temas de hoy que ya venían de antes. Ver [CONTEXTO_X.md](CONTEXTO_X.md#continuidad-entre-días).
 
 ## Consejos para mejores resúmenes

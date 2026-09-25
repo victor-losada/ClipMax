@@ -56,6 +56,17 @@ def write_report(cfg: dict, db: Database, session: dict, decision: dict, candida
     if video:
         md += [f"Video: `{video.name}`", ""]
     md += ["## Resumen del día", "", decision.get("resumen_del_dia", ""), ""]
+    tk = folder / f"resumen_tiktok_{fecha}.mp4"
+    if tk.exists():
+        md += ["## Resumen para TikTok", "", f"Video vertical: `{tk.name}`", ""]
+        if decision.get("caption_resumen_tiktok"):
+            md += [f"Caption: {decision['caption_resumen_tiktok']}", ""]
+    live = [c for c in db.live_clips(session["id"], ("listo",))]
+    if live:
+        md += [f"## Clips hechos en vivo ({len(live)})", ""]
+        md += [f"- `{Path(c['path']).name}` · {c['titulo']} — {c['caption']} {' '.join(c['hashtags'])}"
+               for c in reversed(live)]
+        md.append("")
     md += ["## Mejores momentos", ""]
     for i, m in enumerate(decision.get("mejores_momentos", []), 1):
         c = by_id.get(m["candidato_id"], {})

@@ -35,30 +35,31 @@ class KeepAwake(threading.Thread):
 
     def __init__(self):
         super().__init__(name="keep-awake", daemon=True)
-        self._active = threading.Event()
-        self._stop = threading.Event()
+        # Ojo: no llamar a estos atributos _stop/_started (pisan internos de threading.Thread).
+        self._on = threading.Event()
+        self._halt = threading.Event()
 
     def set_active(self, active: bool) -> None:
-        if active and not self._active.is_set():
+        if active and not self._on.is_set():
             log.info("Suspensión de Windows bloqueada mientras dure la grabación")
-        if not active and self._active.is_set():
+        if not active and self._on.is_set():
             log.info("Suspensión de Windows restaurada")
-        (self._active.set if active else self._active.clear)()
+        (self._on.set if active else self._on.clear)()
 
     def run(self) -> None:
         if not IS_WINDOWS:
             return
         import ctypes
 
-        while not self._stop.wait(30):
-            if self._active.is_set():
+        while not self._halt.wait(30):
+            if self._on.is_set():
                 try:
                     ctypes.windll.kernel32.SetThreadExecutionState(_ES_SYSTEM_REQUIRED)
                 except Exception as exc:  # noqa: BLE001
                     log.warning("SetThreadExecutionState falló: %s", exc)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._halt.set()
 
 
 KEEP_AWAKE = KeepAwake()

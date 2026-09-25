@@ -76,9 +76,26 @@ OUTPUT_SCHEMA = {
             },
         },
         "notas_editor": {"type": "string"},
+        # Resumen vertical para TikTok (máximo ~4 min): tramos cortos, el texto en pantalla cuenta la historia.
+        "resumen_tiktok": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "candidato_id": {"type": "integer"},
+                    "inicio": {"type": "number"},
+                    "fin": {"type": "number"},
+                    "texto_en_pantalla": {"type": "string"},
+                    "momento_clave": {"type": "number"},
+                },
+                "required": ["candidato_id", "inicio", "fin", "texto_en_pantalla", "momento_clave"],
+                "additionalProperties": False,
+            },
+        },
+        "caption_resumen_tiktok": {"type": "string"},
     },
     "required": ["titulo_video", "resumen_del_dia", "lore_para_manana", "guion",
-                 "mejores_momentos", "descartados", "notas_editor"],
+                 "mejores_momentos", "descartados", "notas_editor", "resumen_tiktok", "caption_resumen_tiktok"],
     "additionalProperties": False,
 }
 
@@ -101,7 +118,49 @@ def master_prompt(cfg: dict) -> str:
         "hashtag": _hashtag(cfg["evento"]["nombre"]),
         "efectos": ", ".join(effects.sfx_names(cfg)),
         "max_efectos": str(int(cfg["edicion"].get("sfx_max_por_video", 10))),
+        "tiktok_max_s": str(int(cfg["edicion"].get("resumen_tiktok_max_s", 240))),
     }
+    for key, val in values.items():
+        text = text.replace("{{" + key + "}}", val)
+    return text
+
+
+CLIP_PROMPT_PATH = PROJECT_ROOT / "prompts" / "clip_vivo.md"
+
+# Respuesta de Claude para un clip en vivo (salida estructurada).
+CLIP_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["publicar", "motivo", "inicio", "fin", "momento_clave", "titulo", "caption", "hashtags",
+                 "efecto_sonido"],
+    "properties": {
+        "publicar": {"type": "boolean"},
+        "motivo": {"type": "string"},
+        "inicio": {"type": "number"},
+        "fin": {"type": "number"},
+        "momento_clave": {"type": "number"},
+        "titulo": {"type": "string"},
+        "caption": {"type": "string"},
+        "hashtags": {"type": "array", "items": {"type": "string"}},
+        "efecto_sonido": {"type": "string"},
+    },
+}
+
+
+def clip_prompt(cfg: dict) -> str:
+    """System prompt de los clips en vivo (prompts/clip_vivo.md con la configuración)."""
+    pair = pair_slugs(cfg) + ["", ""]
+    cv = cfg["clips_vivo"]
+    values = {
+        "evento": cfg["evento"]["nombre"],
+        "pareja_a": streamer_name(cfg, pair[0]) if pair[0] else "la pareja principal",
+        "pareja_b": streamer_name(cfg, pair[1]) if pair[1] else "su rival",
+        "hashtag": _hashtag(cfg["evento"]["nombre"]),
+        "efectos": ", ".join(effects.sfx_names(cfg)),
+        "dur_min": str(cv["duracion_min_s"]),
+        "dur_max": str(cv["duracion_max_s"]),
+    }
+    text = CLIP_PROMPT_PATH.read_text(encoding="utf-8")
     for key, val in values.items():
         text = text.replace("{{" + key + "}}", val)
     return text

@@ -18,6 +18,7 @@ import threading
 from . import pipeline
 from .chat import ChatListener
 from .config import ConfigStore, active_streamers
+from .liveclips import LiveClipper
 from .db import Database
 from .detector import run_detection
 from .kick import KickClient
@@ -43,6 +44,7 @@ class SessionManager:
         self.chats: dict[str, ChatListener] = {}
         self.live_tr: LiveTranscriber | None = None
         self.x_poller: XApiPoller | None = None
+        self.clipper: LiveClipper | None = None
         self.end_ts: float | None = None
         self._last_detection = 0.0
         self._detecting = threading.Lock()
@@ -80,6 +82,8 @@ class SessionManager:
             if cfg["x"]["modo"] == "api":
                 self.x_poller = XApiPoller(cfg, self.db, session)
                 self.x_poller.start()
+            self.clipper = LiveClipper(cfg, self.db, session)
+            self.clipper.start()
             if end_ts is None:
                 win = current_window(cfg)
                 end_ts = win[2] if win and win[0] == fecha else now() + float(cfg["evento"]["duracion_horas"]) * 3600
@@ -96,13 +100,14 @@ class SessionManager:
                 return None
             session, cfg = self.session, self.cfg
             log.info("Deteniendo la sesión %s…", session["fecha"])
-            workers = [*self.recorders.values(), *self.chats.values(), self.live_tr, self.x_poller]
+            workers = [*self.recorders.values(), *self.chats.values(), self.live_tr, self.x_poller, self.clipper]
             # Marcamos "grabada" antes de esperar a los hilos: así el programador no la re-arranca.
             self.db.update_session(session["id"], estado="grabada", ended_at=now())
             if manual:
                 self.manual_stops.add(session["fecha"])
             self.session = None
             self.recorders, self.chats, self.live_tr, self.x_poller = {}, {}, None, None
+            self.clipper = None
             self.end_ts = None
         # Esperar a ffmpeg y compañía fuera del lock, para que la web siga respondiendo.
         for w in workers:
@@ -118,6 +123,14 @@ class SessionManager:
         if process:
             pipeline.run_async(self.store.get(), self.db, self.db.get_session(session["id"]))
         return session
+
+    def request_clip(self, moment_id: int) -> bool:
+        """Pide un clip en vivo de un candidato concreto (botón del Panel)."""
+        with self._lock:
+            if not self.clipper:
+                return False
+            self.clipper.request(moment_id)
+            return True
 
     def shutdown(self) -> None:
         """Al cerrar ClipMax: detiene todo pero deja la sesión en 'grabando' para retomarla
@@ -171,6 +184,8 @@ class SessionManager:
                     out["transcripcion_vivo"] = self.live_tr.status
                 if self.x_poller:
                     out["x"] = self.x_poller.status
+                if self.clipper:
+                    out["clips_vivo"] = self.clipper.status
         return out
 
 
