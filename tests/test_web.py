@@ -77,3 +77,11 @@ def test_publish_discarded_live_clip_after_the_session(client, db, monkeypatch):
     assert done.wait(5) and seen == [(s["id"], cid)]
     assert db.live_clip(cid)["estado"] == "procesando"
     assert client.post("/api/clips-vivo/9999/publicar", json={}).status_code == 404
+
+
+def test_session_steps_api(client, db):
+    s = db.get_or_create_session("2026-09-25")
+    db.set_pipeline_step(s["id"], "decidir", "en_curso", "Claude escribiendo… 1:20")
+    r = client.get("/api/sesion/2026-09-25/pasos").get_json()
+    assert r["pasos"]["decidir"]["detalle"].startswith("Claude escribiendo") and r["corriendo"] is False
+    assert client.get("/api/sesion/1999-01-01/pasos").status_code == 404

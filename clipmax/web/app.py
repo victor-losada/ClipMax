@@ -147,6 +147,14 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
                 })
         return jsonify(st)
 
+    @app.get("/api/sesion/<fecha>/pasos")
+    def api_session_steps(fecha: str):
+        """Estado de los pasos del post-proceso (la página de la sesión lo consulta mientras corre)."""
+        s = _session_or_404(fecha)
+        cur = pipeline.current()
+        return jsonify({"estado": s["estado"], "pasos": db.pipeline_state(s["id"]),
+                        "corriendo": pipeline.is_running() and cur.get("fecha") == fecha})
+
     @app.post("/api/sesion/iniciar")
     def api_start():
         try:

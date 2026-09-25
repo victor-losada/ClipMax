@@ -81,4 +81,8 @@ python -m clipmax importar-respuesta respuesta.json --fecha 2026-09-23
 
 ## Salida estructurada
 
-La API compila el esquema de respuesta (`clipmax/prompts.py: OUTPUT_SCHEMA`) a una gramática que tiene un tamaño máximo. Por eso el esquema no usa `enum`: los valores permitidos los dice el prompt y `validate_decision` normaliza cualquier otro. Si aun así la API lo rechaza ("The compiled grammar is too large"), ClipMax repite la llamada sin esquema en el acto (el error no se cobra). El prompt ya pide solo JSON y la respuesta se valida igual.
+La decisión del día **no** usa salida estructurada. La API compila el esquema de respuesta a una gramática con tamaño máximo, y el de la decisión no cabe ("The compiled grammar is too large"). El prompt pide solo JSON, permite omitir los campos vacíos (así la respuesta es más corta) y `validate_decision` normaliza lo que llegue. `clipmax/prompts.py: OUTPUT_SCHEMA` queda como referencia de los campos.
+
+Los clips en vivo sí usan salida estructurada (esquema chico). Si la API rechazara un esquema, ClipMax repite la llamada sin él en el acto; el error no se cobra.
+
+`claude.max_tokens` (64000 por defecto) es el tope de pensamiento + JSON. Solo se paga lo que se genera. Con esfuerzo `high`, una decisión usa unos 25-35 mil tokens de salida.

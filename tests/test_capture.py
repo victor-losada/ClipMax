@@ -114,14 +114,14 @@ def test_decide_api_builds_expected_request(cfg, db, monkeypatch):
     assert seen["model"] == "claude-opus-5"
     assert seen["thinking"] == {"type": "adaptive"}
     assert seen["output_config"]["effort"] == "high"
-    assert seen["output_config"]["format"]["type"] == "json_schema"
+    assert "format" not in seen["output_config"]           # el esquema de la decisión no cabe en la API
     assert seen["fallbacks"] == "default" and seen["betas"] == [brain.FALLBACK_BETA]
     assert "Prompt maestro" in seen["system"]
     run = db.claude_runs()[0]
     assert run["costo_usd"] == pytest.approx(1000 * 5 / 1e6 + 500 * 25 / 1e6)
 
 
-def test_decide_api_retries_without_schema_when_grammar_is_too_large(cfg, db, monkeypatch):
+def test_decide_api_reads_json_without_schema(cfg, db, monkeypatch):
     import anthropic
     import httpx2
 
@@ -168,9 +168,9 @@ def test_decide_api_retries_without_schema_when_grammar_is_too_large(cfg, db, mo
     brain._SCHEMA_OFF.discard("decision")
     try:
         out = brain.decide_api(cfg, db, {"id": 1, "fecha": "2026-09-23"}, "material")
-        assert out == raw
-        assert len(calls) == 2 and "format" not in calls[1]["output_config"]
-        assert calls[1]["output_config"]["effort"] == "high"          # lo demás se mantiene
+        assert out == raw                                           # JSON dentro de ```json con texto antes
+        assert len(calls) == 1 and "format" not in calls[0]["output_config"]
+        assert calls[0]["max_tokens"] == 64000 and calls[0]["output_config"]["effort"] == "high"
     finally:
         brain._SCHEMA_OFF.discard("decision")
 
@@ -181,6 +181,60 @@ def test_output_schema_has_no_enums():
     assert '"enum"' not in json.dumps(OUTPUT_SCHEMA)
 
 
+def test_old_max_tokens_default_is_raised(cfg):
+    from clipmax.config import validate
+
+    cfg["claude"]["max_tokens"] = 32000
+    assert validate(cfg)["claude"]["max_tokens"] == 64000
+    cfg["claude"]["max_tokens"] = 500000
+    assert validate(cfg)["claude"]["max_tokens"] == 128000
+
+
 def test_haiku_params_have_no_thinking(cfg):
     assert brain._model_params(cfg, "claude-haiku-4-5") == {}
     assert brain._model_params(cfg, "claude-sonnet-5")["thinking"] == {"type": "adaptive"}
+
+
+def test_decide_api_reports_progress_while_streaming(cfg, db, monkeypatch):
+    raw = {"titulo_video": "T", "guion": []}
+    text = json.dumps(raw)
+
+    class Stream:
+        def __init__(self, params):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def __iter__(self):
+            yield SimpleNamespace(type="content_block_start", content_block=SimpleNamespace(type="thinking"))
+            time.sleep(4.5)                                        # Claude "pensando" sin mandar nada
+            yield SimpleNamespace(type="content_block_start", content_block=SimpleNamespace(type="text"))
+            yield SimpleNamespace(type="content_block_delta", delta=SimpleNamespace(type="text_delta", text=text))
+
+        def get_final_message(self):
+            usage = SimpleNamespace(input_tokens=1000, output_tokens=500, cache_creation_input_tokens=0,
+                                    cache_read_input_tokens=0, server_tool_use=None)
+            return SimpleNamespace(model="claude-opus-5", stop_reason="end_turn", usage=usage,
+                                   content=[SimpleNamespace(type="text", text=text)], to_json=lambda: "{}")
+
+    class FakeClient:
+        class messages:
+            @staticmethod
+            def count_tokens(**_):
+                return SimpleNamespace(input_tokens=1000)
+
+        class beta:
+            class messages:
+                @staticmethod
+                def stream(**params):
+                    return Stream(params)
+
+    monkeypatch.setattr(brain, "_client", lambda: FakeClient())
+    seen = []
+    out = brain.decide_api(cfg, db, {"id": 1, "fecha": "2026-09-23"}, "material", progress=seen.append)
+    assert out == raw
+    assert seen and seen[0].startswith("Claude pensando… 0:0")

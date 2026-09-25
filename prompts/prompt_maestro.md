@@ -60,7 +60,9 @@ Escribe también `lore_para_manana`: de 3 a 6 líneas con el estado de las rival
 
 ## Formato de respuesta
 
-Responde únicamente con un objeto JSON con esta forma (sin texto antes ni después):
+Responde únicamente con un objeto JSON con esta forma (sin texto antes ni después). Para que la respuesta no sea más larga de lo necesario:
+- En cada elemento puedes omitir los campos que irían vacíos, en 0, en `false` o como lista vacía. Por ejemplo, una narración basta con `tipo` y `texto`, y un clip sin efectos no necesita `emociones`, `zoom_texto` ni `facecam_completo`.
+- `motivo`, `por_que_importa` y las notas van en una frase corta.
 
 ```json
 {
