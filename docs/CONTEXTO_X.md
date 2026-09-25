@@ -33,6 +33,15 @@ El post-proceso arranca solo al cierre del día. Tienes dos formas de trabajar:
 
 Si ya se procesó sin contexto y quieres rehacerlo con contexto, pega y pulsa **"desde aquí"** en el paso *decidir* (es otra llamada a Claude, unos $0.30–0.50 con Opus).
 
+## Continuidad entre días
+
+El contexto de cada día queda guardado en su sesión, y los días siguientes lo reutilizan de dos formas:
+
+- **Grok**: "Copiar prompt para Grok" incluye los *hilos de días anteriores* (el `lore_para_manana` que escribió Claude o, si ese día no hubo decisión, los PIQUES que trajo Grok). Grok busca cómo siguen y los reporta en una sección nueva, **CONTINUACIONES**.
+- **Claude**: recibe la *Historia de días anteriores* (últimos 3 días: su lore y un resumen de lo que se decía en X: PIQUES, CONTINUACIONES, MOMENTOS CLIPEADOS y TEMAS) y la lista de *temas de hoy que ya venían de antes* (por ejemplo, `juicio (09-23)`). Con eso hace callbacks ("ayer…; hoy…") y prioriza lo que continúa un hilo.
+
+No tienes que hacer nada extra: basta con pegar el contexto cada día. Los nombres del evento y de los streamers no cuentan como "tema que continúa", porque salen todos los días.
+
 ## Otras opciones
 
 | Modo (`x.modo`) | Costo | Cuándo usarlo |

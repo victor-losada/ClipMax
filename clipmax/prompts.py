@@ -14,10 +14,11 @@ import json
 import re
 from pathlib import Path
 
-from . import effects
+from . import effects, xcontext
 from .config import PROJECT_ROOT, pair_slugs, session_dir, streamer_name
 from .db import Database
 from .detector import describe_components
+from .mentions import normalize
 from .timeutil import fmt_clock
 
 MASTER_PROMPT_PATH = PROJECT_ROOT / "prompts" / "prompt_maestro.md"
@@ -109,8 +110,11 @@ def master_prompt(cfg: dict) -> str:
 GROK_PROMPT_PATH = PROJECT_ROOT / "prompts" / "grok_contexto_x.md"
 
 
-def grok_prompt(cfg: dict, fecha: str) -> str:
-    """Prompt para que Grok (u otro chat con acceso a X) investigue el día; su salida se pega en ClipMax."""
+def grok_prompt(cfg: dict, fecha: str, db: Database | None = None) -> str:
+    """Prompt para que Grok (u otro chat con acceso a X) investigue el día; su salida se pega en ClipMax.
+
+    Con `db`, le pasa los hilos de días anteriores para que busque cómo siguen.
+    """
     from datetime import date
 
     from .timeutil import local_dt, session_window
@@ -131,11 +135,70 @@ def grok_prompt(cfg: dict, fecha: str) -> str:
         "pareja_b": streamer_name(cfg, pair[1]) if pair[1] else "su rival",
         "streamers": ", ".join(others) or "el resto de participantes",
         "cuentas": cuentas,
+        "historia": history_for_grok(previous_days(cfg, db, fecha)) if db else "",
     }
+    values["historia"] = values["historia"] or "(no hay días anteriores registrados; es el primer día)"
     text = GROK_PROMPT_PATH.read_text(encoding="utf-8")
     for key, val in values.items():
         text = text.replace("{{" + key + "}}", val)
     return text
+
+
+# -- memoria entre días ------------------------------------------------------------
+def _previous_lore(cfg: dict, fecha: str) -> str:
+    f = session_dir(cfg, fecha) / "claude" / "decision.json"
+    if not f.exists():
+        return ""
+    try:
+        return str(json.loads(f.read_text(encoding="utf-8")).get("lore_para_manana") or "").strip()
+    except ValueError:
+        return ""
+
+
+def previous_days(cfg: dict, db: Database, fecha: str, days: int = 3, x_chars: int = 1500) -> list[dict]:
+    """Memoria de los días anteriores (del más viejo al más reciente) que tienen algo que contar.
+
+    Cada día: {"fecha", "lore" (lo que Claude escribió en lore_para_manana), "x" (resumen del
+    contexto de X pegado ese día), "x_texto" (el contexto completo, para cruzar temas)}.
+    """
+    out = []
+    # Se mira más atrás por si hay días vacíos (pruebas, domingos, días sin datos) en medio.
+    for p in db.previous_sessions(fecha, days * 4):
+        x_full = (p.get("x_contexto") or "").strip()
+        if not x_full:
+            x_full = "\n\n".join(post["texto"] for post in db.x_posts(p["id"]))
+        day = {"fecha": p["fecha"], "lore": _previous_lore(cfg, p["fecha"]),
+               "x": xcontext.digest(x_full, x_chars), "x_texto": x_full}
+        if day["lore"] or day["x"]:
+            out.append(day)
+            if len(out) >= days:
+                break
+    return out[::-1]
+
+
+def history_for_grok(history: list[dict], max_chars: int = 3500) -> str:
+    """Hilos de días anteriores en pocas líneas, para que Grok busque cómo siguen."""
+    blocks = []
+    for day in history:
+        secs = xcontext.sections(day["x_texto"])
+        body = day["lore"] or "\n".join(secs[k] for k in ("PIQUES", "CONTINUACIONES") if secs.get(k)) \
+            or day["x"]
+        if body:
+            blocks.append(f"{day['fecha']}:\n{body.strip()}")
+    text = "\n\n".join(blocks)
+    while len(text) > max_chars and len(blocks) > 1:   # sobra: se quita el día más viejo
+        blocks.pop(0)
+        text = "\n\n".join(blocks)
+    return text[:max_chars]
+
+
+def _everyday_words(cfg: dict) -> set[str]:
+    """Palabras que salen todos los días y no indican continuidad (evento y nombres de streamers)."""
+    words = set(normalize(cfg["evento"]["nombre"]).split()) | {"minecraft", "kick", "stream", "directo", "hoy"}
+    for s in cfg["streamers"]:
+        for name in [s["slug"], s["nombre"], *s["alias"]]:
+            words |= set(normalize(name).split())
+    return words
 
 
 def candidates_path(cfg: dict, fecha: str) -> Path:
@@ -233,23 +296,27 @@ def build_day_material(cfg: dict, db: Database, session: dict, candidates: list[
     if ev.get("lore_base", "").strip():
         lines += ["", "## Notas fijas del evento", ev["lore_base"].strip()]
 
-    prev = [p for p in db.previous_sessions(session["fecha"], 3)]
-    lore_prev = []
-    for p in reversed(prev):
-        f = session_dir(cfg, p["fecha"]) / "claude" / "decision.json"
-        if f.exists():
-            try:
-                lore = json.loads(f.read_text(encoding="utf-8")).get("lore_para_manana", "").strip()
-            except ValueError:
-                lore = ""
-            if lore:
-                lore_prev.append(f"### {p['fecha']}\n{lore}")
-    if lore_prev:
-        lines += ["", "## Lore acumulado de días anteriores", *lore_prev]
+    history = previous_days(cfg, db, session["fecha"])
+    if history:
+        lines += ["", "## Historia de días anteriores (memoria)",
+                  "Del más viejo al más reciente. «Lore» es lo que tú escribiste ese día en `lore_para_manana`; "
+                  "«En X» es lo que se comentaba ese día. Úsalo para callbacks: qué pique sigue, qué promesa "
+                  "se cumplió, quién cambió de bando."]
+        for day in history:
+            lines += ["", f"### {day['fecha']}"]
+            if day["lore"]:
+                lines.append(f"**Lore:** {day['lore']}")
+            if day["x"]:
+                lines.append(f"**En X:**\n{day['x']}")
 
     lines += ["", "## Qué se comenta hoy en X"]
     if x_keywords:
         lines.append("Temas más repetidos: " + ", ".join(f"{k} ({n})" for k, n in x_keywords[:20]))
+        recurring = xcontext.recurring_topics(x_keywords, {d["fecha"]: d["x_texto"] for d in history},
+                                              ignore=_everyday_words(cfg))
+        if recurring:
+            lines.append("Temas de hoy que ya venían de días anteriores: " + ", ".join(
+                f"{k} ({', '.join(f[5:] for f in fechas)})" for k, fechas in recurring))
     lines.append(x_text.strip() if x_text.strip() else "(sin contexto de X para hoy)")
 
     # Resumen de menciones por voz del día (del transcriptor en vivo).

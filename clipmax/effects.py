@@ -267,9 +267,10 @@ def zoom_filter(src: str, dst: str, at: float, size: tuple[int, int], fps: int,
     t0, t1 = max(0.0, at - ramp), at + hold
     z = (f"1+{factor - 1:.3f}*clip((it-{t0:.3f})/{ramp},0,1)"
          f"*clip(({t1 + ramp:.3f}-it)/{ramp},0,1)")
-    # setpts: zoompan entrega marcas de tiempo mal escaladas; sin renumerarlas, el filtro fps
-    # posterior duplica fotogramas sin fin (14 s de entrada -> una hora de salida).
-    return (f"[{src}]zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+    # zoompan saca un fotograma por cada uno que entra y los renumeramos a `fps` (setpts): sin
+    # renumerar, el filtro fps posterior duplica fotogramas sin fin (14 s -> una hora). Por eso la
+    # entrada tiene que venir ya a `fps`: 60 fps de Kick renumerados a 30 = cámara lenta al doble.
+    return (f"[{src}]fps={fps},zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
             f":d=1:s={w}x{h}:fps={fps},setpts=N/({fps}*TB),setsar=1[{dst}]")
 
 

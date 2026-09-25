@@ -16,7 +16,7 @@ python -m clipmax prompt-maestro
 1. Al terminar el día, ClipMax ya grabó, detectó, transcribió y puntuó. Entra a **Sesiones → (fecha)**.
 2. Pulsa **"1 · Generar y copiar paquete"**. Se copia al portapapeles un texto con:
    - el prompt maestro;
-   - el material del día: streamers, notas de lore, lore de días anteriores, temas y posts de X, menciones por voz detectadas y los candidatos con su transcripción, sus tiempos y lo que decía el chat.
+   - el material del día: streamers, notas de lore, historia de días anteriores (lore y contexto de X), temas y posts de X, menciones por voz detectadas y los candidatos con su transcripción, sus tiempos y lo que decía el chat.
    (También se guarda en `data\sesiones\<fecha>\claude\paquete_para_claude_<fecha>.md`.)
 3. En claude.ai abre un chat nuevo y pega el paquete.
    - **Opcional:** si tu plan tiene búsqueda web, actívala y agrega al final: *"Antes de decidir, busca qué se comentó hoy en X sobre el Desafío 4, Westcol y Gear of Nos, y úsalo como contexto."* El prompt ya contempla ese caso y lo resume en `notas_editor`.
@@ -55,7 +55,7 @@ python -m clipmax importar-respuesta respuesta.json --fecha 2026-09-23
 - `momento_clave` es el segundo del remate: ahí entran el zoom suave y el `efecto_sonido` (si Claude eligió uno).
 - `pantalla_dividida_con` muestra a la par a otro candidato del "mismo suceso" (por ejemplo, Gear reaccionando mientras Westcol habla).
 - Si pegas una respuesta vieja sin estos campos, funciona igual: se toman como 0 o vacíos.
-- `lore_para_manana` se guarda y al día siguiente vuelve como memoria, para que la historia tenga continuidad.
+- `lore_para_manana` se guarda y al día siguiente vuelve como memoria, para que la historia tenga continuidad. El material incluye la *Historia de días anteriores* (lore más un resumen del contexto de X de los últimos 3 días) y los temas de hoy que ya venían de antes. Ver [CONTEXTO_X.md](CONTEXTO_X.md#continuidad-entre-días).
 
 ## Consejos para mejores resúmenes
 

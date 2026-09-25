@@ -201,7 +201,7 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
     def api_grok_prompt(fecha: str):
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", fecha):
             return _err("fecha inválida (usa AAAA-MM-DD)")
-        return jsonify({"texto": prompts.grok_prompt(store.get(), fecha)})
+        return jsonify({"texto": prompts.grok_prompt(store.get(), fecha, db)})
 
     # ------------------------------------------------------------------ API: configuración
     @app.post("/api/config")

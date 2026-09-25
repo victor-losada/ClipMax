@@ -319,6 +319,10 @@ def render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int],
         return _render_clip(cfg, spec, out, out_size, title_png, work, None, False)
 
 
+# Audio alineado al cero del corte (ver _render_clip): recorta lo negativo y rellena con silencio.
+SYNC_AUDIO = "aresample=async=1:first_pts=0"
+
+
 def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int], title_png: Path | None,
                  work: Path | None, sfx_lib: dict | None, effects_on: bool) -> float:
     ed = cfg["edicion"]
@@ -337,8 +341,14 @@ def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int]
         return len(inputs) - 1
 
     partner = spec.partner if (effects_on and ed.get("pantalla_dividida")) else None
-    parts = [f"[0:v]setpts=PTS-STARTPTS,split={k}" + "".join(f"[vs{i}]" for i in range(k)),
-             f"[0:a]asetpts=PTS-STARTPTS,asplit={k}" + "".join(f"[as{i}]" for i in range(k))]
+    # Sincronía: tras -ss, audio y video comparten el mismo cero (el punto de corte), pero el video
+    # puede empezar antes (keyframe anterior, marcas negativas) o después (el siguiente keyframe:
+    # Kick pone uno cada ~2 s). Restar el inicio de cada pista por separado (PTS-STARTPTS) los
+    # desfasaba hasta 2 s; en cambio se alinean las dos al cero común: fps/aresample con
+    # start_time/first_pts=0 recortan lo negativo y rellenan el hueco inicial.
+    # fps además baja los 60 fps de Kick a los de salida antes del zoom (si no, cámara lenta).
+    parts = [f"[0:v]fps={fps}:start_time=0,split={k}" + "".join(f"[vs{i}]" for i in range(k)),
+             f"[0:a]{SYNC_AUDIO},asplit={k}" + "".join(f"[as{i}]" for i in range(k))]
     for i, (a, b) in enumerate(keep):
         ln = b - a
         fade = min(0.04, ln / 4)
@@ -352,7 +362,7 @@ def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int]
         pre = max(0.0, partner.wall0 - spec.wall0)
         post = max(0.0, spec.dur - pre - partner.dur) + 1.0
         # Solo imagen del otro streamer: mezclar los dos audios haría eco (suelen estar en la misma llamada).
-        parts.append(f"[{ip}:v]setpts=PTS-STARTPTS,tpad=start_mode=clone:start_duration={pre:.3f}:"
+        parts.append(f"[{ip}:v]fps={fps}:start_time=0,tpad=start_mode=clone:start_duration={pre:.3f}:"
                      f"stop_mode=clone:stop_duration={post:.3f},split={k}" + "".join(f"[ps{i}]" for i in range(k)))
         for i, (a, b) in enumerate(keep):
             parts.append(f"[ps{i}]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[p{i}]")

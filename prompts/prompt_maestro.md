@@ -22,7 +22,7 @@ Descarta el gameplay sin conversación (minar, construir, farmear), la lectura d
 - "Mismo suceso" indica que dos candidatos son el mismo momento visto desde dos streams. Puedes usar uno solo, o los dos seguidos para mostrar ambos lados del chipeo (suele ser lo mejor del día).
 - El contexto de X dice qué historias están calientes hoy. Úsalo para priorizar y para dar contexto en la narración, pero no afirmes como hecho algo que no esté en las transcripciones o en los posts; si lo mencionas, atribúyelo ("en X dicen que...").
 - Si en esta conversación tienes búsqueda web y el material no trae contexto de X, busca qué se comentó hoy sobre el {{evento}}, {{pareja_a}} y {{pareja_b}} antes de decidir, y resume lo que encontraste en `notas_editor`.
-- El lore de días anteriores sirve para dar continuidad: callbacks, rivalidades que siguen, promesas que se cumplieron o no.
+- El lore de días anteriores sirve para dar continuidad: callbacks, rivalidades que siguen, promesas que se cumplieron o no. Si un momento de hoy continúa un hilo de la «Historia de días anteriores» o un tema que «ya venía de días anteriores», súbele la prioridad y dilo en la narración ("Ayer…; hoy…"). No cuentes como nuevo algo que ya pasó otro día.
 
 ## Cómo cortar
 
@@ -55,7 +55,7 @@ El video lleva subtítulos dinámicos automáticos. Además, en cada clip puedes
 
 Elige de 3 a 8 mejores momentos del día (pueden coincidir con clips del video). Para cada uno: título, por qué importa (qué cambia en la historia del torneo o por qué la comunidad lo va a comentar), 3 captions para TikTok (máximo 150 caracteres, con el gancho en las primeras palabras, sin spoilear el remate) y de 3 a 6 hashtags, incluyendo #{{hashtag}}.
 
-Escribe también `lore_para_manana`: de 3 a 6 líneas con el estado de las rivalidades y alianzas al final del día. Mañana lo vas a recibir como memoria.
+Escribe también `lore_para_manana`: de 3 a 6 líneas con el estado de las rivalidades y alianzas al final del día y los hilos que quedan abiertos (qué falta por ver). Mañana lo vas a recibir como memoria, y también se lo pasamos al investigador de X para que busque cómo siguen.
 
 ## Formato de respuesta
 
