@@ -150,10 +150,15 @@ def render_summary_eufonia(cfg: dict, db: Database, session: dict, decision: dic
 
     # 4) Cuerpo: clips (con rótulo pixel en el desenlace) y hasta 3 tarjetas de narración.
     last_clip: ClipSpec | None = None
+    narraciones = 0
     for idx, it in enumerate(items):
         if progress:
             progress(f"render {idx + 1}/{len(items)}: {it['tipo']}")
         if it["tipo"] == "narracion":
+            # Decisiones hechas con el estilo clásico traen muchas narraciones: aquí van máximo 3.
+            narraciones += 1
+            if narraciones > 3:
+                continue
             nxt = next((specs[j] for j in range(idx + 1, len(items)) if j in specs), last_clip)
             bg = None
             if nxt:
