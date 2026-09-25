@@ -172,7 +172,12 @@ Las narraciones son tarjetas con el fotograma del clip siguiente desenfocado, y 
 
 Tope por hora. El botón 🎬 del Panel encola un momento concreto y salta ese tope. `tools.background_priority()` baja la prioridad de whisper/ffmpeg en ese hilo, y un único candado de whisper evita dos transcripciones a la vez.
 
-**Resumen para TikTok** (`editor.render_tiktok_summary`). Toma los tramos de `resumen_tiktok` de la decisión o, si no hay, los arma de los mejores momentos: gancho primero y luego cronológico. Los renderiza en vertical con el texto en pantalla, sin tarjetas, y los une con un tope de `edicion.resumen_tiktok_max_s`.
+**Resumen para TikTok** (`editor.render_tiktok_summary`). Si los hechos de `resumen_tiktok` traen narración y está la voz de Piper, lo arma `tiktok_recap.py` según la ficha vertical:
+- `narrator.py` sintetiza frase por frase, sin pausas de más de 0.3 s y con el tiempo de cada palabra;
+- cada hecho es una pieza: cortes rápidos leídos con `-ss` por plano, clip 16:9 centrado sobre su versión desenfocada, contadores que cambian en la palabra clave, flash de color, ráfaga con cuadro de impacto y la cita con el plan del director (`style.direct`);
+- intro con revelado pixel y cierre con primerísimo plano y "sígueme".
+
+Si no, toma los tramos de `resumen_tiktok` o los arma de los mejores momentos (gancho primero y luego cronológico) y los renderiza en vertical con el texto en pantalla. En los dos casos el tope es `edicion.resumen_tiktok_max_s`.
 
 **Sincronía y tiempos** (medidos con grabaciones reales de Kick y ffmpeg 9):
 - Kick transmite a 60 fps. Todo el render pasa primero a los fps de salida (el zoompan renumeraba fotogramas: cámara lenta).

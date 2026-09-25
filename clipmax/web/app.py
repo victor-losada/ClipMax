@@ -303,9 +303,10 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
     def api_camera(slug: str):
         cfg = store.get()
         body = request.get_json(silent=True) or {}
+        key = "zona_chat" if body.get("zona") == "chat" else "camara"
         for st in cfg["streamers"]:
             if st["slug"] == slug:
-                st["camara"] = None if body.get("borrar") else {k: round(float(body[k]), 4) for k in ("x", "y", "w", "h")}
+                st[key] = None if body.get("borrar") else {k: round(float(body[k]), 4) for k in ("x", "y", "w", "h")}
                 break
         else:
             return _err("streamer desconocido", 404)

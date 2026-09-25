@@ -132,6 +132,20 @@ def install_model(name: str) -> None:
     _download(MODEL_URL.format(name=name), dest)
 
 
+VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/{lang}/{loc}/{name}/{quality}/{file}"
+
+
+def install_voice(voice: str = "es_MX-claude-high") -> None:
+    """Voz de Piper para el narrador del resumen de TikTok (modelo .onnx + su .onnx.json)."""
+    loc, name, quality = voice.split("-", 2)
+    for file in (f"{voice}.onnx", f"{voice}.onnx.json"):
+        dest = MODELS / file
+        if dest.exists():
+            print(f"Ya existe {dest.name}")
+            continue
+        _download(VOICE_URL.format(lang=loc.split("_")[0], loc=loc, name=name, quality=quality, file=file), dest)
+
+
 def install_vad() -> None:
     dest = MODELS / "ggml-silero-v5.1.2.bin"
     if not dest.exists():
@@ -149,7 +163,7 @@ def install_ffmpeg() -> None:
 
 
 def run(models: list[str], ffmpeg: bool, cuda: bool, vad: bool, skip_whisper: bool,
-        force: bool = False) -> bool:
+        force: bool = False, voice: str | None = "es_MX-claude-high") -> bool:
     """Descarga todo lo pedido. Un fallo no detiene el resto; al final se resume. True = todo bien."""
     if sys.platform != "win32" and not skip_whisper:
         print("Aviso: los binarios que se descargan son para Windows x64. En Linux/macOS compila whisper.cpp.")
@@ -159,6 +173,8 @@ def run(models: list[str], ffmpeg: bool, cuda: bool, vad: bool, skip_whisper: bo
     jobs += [(lambda m=m: install_model(m)) for m in models]
     if vad:
         jobs.append(install_vad)
+    if voice:
+        jobs.append(lambda: install_voice(voice))
     if ffmpeg:
         jobs.append(install_ffmpeg)
     failed: list[DownloadError] = []

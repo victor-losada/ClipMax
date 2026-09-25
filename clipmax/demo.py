@@ -122,33 +122,58 @@ def _synthetic_chat(db: Database, sid: int, slug: str, t0: float, minutes: float
 
 
 def _canned_decision(candidates: list[dict]) -> dict:
-    """Decisión de ejemplo (lo que haría Claude) para probar sin gastar API, con efectos."""
+    """Decisión de ejemplo (lo que haría Claude) para probar sin gastar API, en estilo Eufonía:
+    gancho repetido, una narración, bloques, emociones (punch-ins), zoom a texto y rótulo final."""
     top = candidates[:4]
-    sfx = ["boom", "ding", "impacto", ""]
-    guion = [{"tipo": "narracion", "texto": "Día de prueba en el Desafío: el chipeo entre Westcol y Gear of Nos no tardó en llegar.",
-              "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 5, "motivo": "gancho",
-              "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0}]
+    empty = {"titulo_en_pantalla": "", "motivo": "", "momento_clave": 0, "efecto_sonido": "",
+             "pantalla_dividida_con": 0, "emociones": [], "zoom_texto": [], "facecam_completo": [],
+             "rotulo": "", "conservar_silencios": False, "zoom_final": False, "repeticiones": 0}
+    guion = []
+    first = top[0] if top else None
+    if first:
+        lines = [(a, b, t) for a, b, t in first.get("transcripcion", []) if a > 1]
+        a, b = (lines[0][0], min(lines[0][0] + 2.0, lines[0][1])) if lines else (3.0, 5.0)
+        guion.append({**empty, "tipo": "gancho", "texto": "", "candidato_id": first["id"], "inicio": a, "fin": b,
+                      "prioridad": 5, "bloque": "gancho", "repeticiones": 3})
+    guion.append({**empty, "tipo": "narracion", "texto": "Día de prueba en el Desafío: el chipeo entre Westcol y "
+                  "Gear of Nos no tardó en llegar.", "candidato_id": 0, "inicio": 0, "fin": 0, "prioridad": 5,
+                  "bloque": "premisa"})
+    bloques = ["premisa", "cuerpo", "climax", "desenlace"]
     for i, c in enumerate(top, 1):
         inicio, fin = 3.0, min(c["duracion"] - 1, 55.0)
-        # Remate: la primera frase transcrita dentro del corte.
         lines = [a for a, _b, _t in c.get("transcripcion", []) if inicio + 1 < a < fin - 1]
-        guion.append({"tipo": "narracion", "texto": f"Mientras tanto, en el stream de {c['nombre']}…",
-                      "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 3, "motivo": "",
-                      "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0})
-        guion.append({"tipo": "clip", "texto": "", "candidato_id": c["id"], "inicio": inicio, "fin": fin,
-                      "titulo_en_pantalla": f"MOMENTO {i}", "prioridad": 5 - min(i, 4), "motivo": c["por_que"],
-                      "momento_clave": (lines[0] + 1.0) if lines else 0, "efecto_sonido": sfx[i - 1] if lines else "",
-                      "pantalla_dividida_con": (c.get("mismo_suceso") or [0])[0] if i == 1 else 0})
-    guion.append({"tipo": "narracion", "texto": "¿Cumplirá Gear su amenaza de quemar la base? Mañana lo sabremos.",
-                  "candidato_id": 0, "inicio": 0, "fin": 0, "titulo_en_pantalla": "", "prioridad": 5, "motivo": "cierre",
-                  "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0})
+        emo = [{"t": lines[0] + 0.5, "tipo": "sorpresa", "texto": ""}] if lines else []
+        guion.append({**empty, "tipo": "clip", "texto": "", "candidato_id": c["id"], "inicio": inicio, "fin": fin,
+                      "prioridad": 5 - min(i, 4), "motivo": c["por_que"], "bloque": bloques[min(i, 4) - 1],
+                      "momento_clave": (lines[0] + 1.0) if lines else 0, "emociones": emo,
+                      "zoom_texto": [{"t": inicio + 4.0, "zona": "juego", "texto": ""}] if i == 2 else [],
+                      "rotulo": "RIVALIDAD · GEAR OF NOS" if i == len(top) else ""})
     mejores = [{"candidato_id": c["id"], "inicio": 3.0, "fin": min(c["duracion"] - 1, 45.0),
                 "titulo": f"Chipeo #{i}", "por_que_importa": "Ejemplo generado por la demo.",
                 "captions_tiktok": ["Westcol no se aguantó 😂", "Gear lo dijo en vivo 👀", "Esto no termina aquí"],
                 "hashtags": ["#Desafio4", "#Westcol", "#Kick"]} for i, c in enumerate(top[:2], 1)]
+    # Resumen TikTok narrado (ficha vertical): contadores, un hecho por candidato y una cita.
+    hechos = [("Todo empezó con Westcol y Gear of Nos discutiendo por la mina.", "pique", "", 0, "mina"),
+              ("Entonces Westcol cayó a la lava y murió por primera vez.", "muerte", "muertes", 1, "murió"),
+              ("Al final Gear of Nos sumó un aliado y juró venganza.", "alianza", "aliados", 1, "aliado")]
+    tiktok = []
+    for (texto, tipo, contador, suma, clave), c in zip(hechos, top):
+        fin = min(c["duracion"] - 1, 40.0)
+        lines = [(a, b) for a, b, _t in c.get("transcripcion", []) if 5 < a < fin - 3]
+        cita = (lines[0][0], min(lines[0][0] + 3.0, fin)) if lines and tipo == "muerte" else (0.0, 0.0)
+        tiktok.append({"candidato_id": c["id"], "inicio": 3.0, "fin": fin, "texto_en_pantalla": "",
+                       "momento_clave": (lines[0][0] + 1.0) if lines else 0, "narracion": texto, "tipo_evento": tipo,
+                       "contador": contador, "suma": suma, "palabra_clave": clave, "cita_inicio": cita[0],
+                       "cita_fin": cita[1], "prioridad": 5 if tipo == "muerte" else 3})
     return {"titulo_video": "Demo · El robo de los diamantes", "resumen_del_dia": "Resumen de demostración.",
             "lore_para_manana": "Gear amenazó con quemar la base de Westcol.", "guion": guion,
-            "mejores_momentos": mejores, "descartados": [], "notas_editor": "Decisión sintética de la demo."}
+            "mejores_momentos": mejores, "descartados": [], "notas_editor": "Decisión sintética de la demo.",
+            "resumen_tiktok": tiktok,
+            "tiktok_contadores": [{"id": "muertes", "etiqueta": "Muertes", "icono": "calavera", "inicial": 0},
+                                  {"id": "aliados", "etiqueta": "Aliados", "icono": "corazon", "inicial": 2}],
+            "tiktok_intro": "Día de prueba: 1 muerte, 3 aliados y una mina que nadie quiso compartir.",
+            "tiktok_cierre": "Sígueme para no perderte el próximo día.",
+            "caption_resumen_tiktok": "El día de prueba en 1 minuto #Desafio4"}
 
 
 def run_demo(use_claude: bool = False, minutes: float = 6.0) -> None:

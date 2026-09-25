@@ -2,7 +2,9 @@
 
 ClipMax graba a los streamers del **Desafío 4** a la hora del evento, detecta sin modelos entrenados los momentos con más hype (picos de chat, menciones cruzadas y lo que se comenta en X) y deja que **Claude** decida qué es *lore*: sobre todo el **chipeo entre Westcol y Gear of Nos**. Con eso escribe el guion y los cortes, y **ffmpeg** monta un resumen diario de 10–20 minutos más un documento con los mejores momentos y captions para TikTok.
 
-Mientras graba, además, arma **clips verticales para TikTok** que descargas desde el Panel. Al cierre deja un **resumen vertical para TikTok de máximo 4 minutos** ([docs/CLIPS_TIKTOK.md](docs/CLIPS_TIKTOK.md)).
+El resumen se edita en estilo **"Eufonía"**: montaje coral con las voces al frente, gancho en frío, zoom a la cara en las emociones y al texto que las provocó, captions de frases clave y rótulos pixel ([docs/ESTILO_EDICION.md](docs/ESTILO_EDICION.md)).
+
+Mientras graba, además, arma **clips verticales para TikTok** que descargas desde el Panel. Al cierre deja un **resumen vertical para TikTok de máximo 4 minutos**, narrado en off con voz local (Piper), con contadores, flashes y citas de los streamers ([docs/CLIPS_TIKTOK.md](docs/CLIPS_TIKTOK.md)).
 
 Todo corre local y gratis (ffmpeg, yt-dlp, whisper.cpp, SQLite, Flask). Lo único que se paga es la API de Claude, con un tope mensual (por defecto $10), o puedes usar el **modo manual**, que genera un texto para pegar en claude.ai y no gasta API.
 
@@ -48,6 +50,10 @@ clipmax/
   brain.py         Claude: salida estructurada, fallback, presupuesto, modo manual
   editor.py        ffmpeg: silencios, encuadres, títulos, tarjetas, concat
   liveclips.py     clips verticales para TikTok mientras se graba (Claude Haiku o reglas)
+  tiktok_recap.py  resumen TikTok narrado (ficha vertical: contadores, flashes, impacto, citas)
+  narrator.py      narrador en off con Piper (sin pausas, tiempos por palabra)
+  style.py         director de efectos: emociones, textos que provocan reacciones, zooms y captions
+  montage.py       montaje del resumen en estilo Eufonía (gancho, sting, bloques, pantalla final)
   diagnostic.py    diagnóstico de sincronía audio/video con las grabaciones reales
   cards.py tts.py  gráficos (Pillow) y voz local opcional
   report.py        resumen .md/.html con captions
@@ -55,9 +61,11 @@ clipmax/
   scheduler.py     horario, sesión en vivo, anti-suspensión, reanudación
   web/             interfaz Flask
   demo.py          demo de punta a punta con datos sintéticos
-prompts/prompt_maestro.md   prompts/clip_vivo.md   prompts/grok_contexto_x.md
+prompts/prompt_maestro.md   prompts/estilo_eufonia.md   prompts/estilo_clasico.md
+prompts/clip_vivo.md   prompts/grok_contexto_x.md
+assets/fonts/      Titan One y Press Start 2P (OFL)
 arrancar.py        lanzador de los .bat (verifica la carpeta clipmax y ejecuta python -m clipmax)
-tests/             93 pruebas (incluye grabación y render reales con ffmpeg)
+tests/             104 pruebas (incluye grabación y render reales con ffmpeg)
 ```
 
 ## Pruebas

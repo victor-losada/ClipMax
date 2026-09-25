@@ -71,6 +71,10 @@ def _sapi(cfg: dict, text: str, out_wav: Path) -> bool:
 
 
 def _piper(cfg: dict, text: str, out_wav: Path) -> bool:
+    from . import narrator
+
+    if narrator.available(cfg):   # paquete piper-tts (el mismo del narrador de TikTok)
+        return narrator.narrate(cfg, text, out_wav).dur > 0.3
     exe = resolve_path(cfg["edicion"]["piper_exe"])
     voice = resolve_path(cfg["edicion"]["piper_voz"])
     if not exe.exists() or not voice.exists():

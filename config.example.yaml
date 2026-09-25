@@ -44,7 +44,9 @@ streamers:
     prioridad: 1.5
     alias: [west, wescol, güestcol, westcoll]
     transcribir_en_vivo: true
-    camara: null
+    camara: null              # recuadro de la cara (web: Configuración -> Cámara)
+    zona_chat: null           # recuadro del chat que muestra en pantalla (para el zoom al mensaje)
+    color: ""                 # color de sus captions, ej. "#FFD400" (vacío = paleta automática)
 
   - nombre: "Gear of Nos"
     # ⚠ REEMPLAZA esta URL: "gearofnos" es un marcador y NO existe en Kick. Abre su canal,
@@ -133,6 +135,7 @@ claude:
     claude-haiku-4-5: [1.0, 5.0]
 
 edicion:
+  estilo: "eufonia"           # eufonia (montaje coral, zooms a la cara y a textos; docs/ESTILO_EDICION.md) | clasico
   formato: "horizontal"       # horizontal (YouTube) | vertical (TikTok/Shorts, cámara arriba y juego abajo)
   ancho: 1920
   alto: 1080
@@ -153,6 +156,8 @@ edicion:
   exportar_clips_tiktok: true # un clip vertical por cada "mejor momento"
   resumen_tiktok: true        # además del resumen horizontal, uno vertical para TikTok…
   resumen_tiktok_max_s: 240   # …de máximo 4 minutos
+  tiktok_narrado: true        # resumen TikTok con narrador en off (voz Piper, piper_voz); sin voz sale con texto
+  narrador_velocidad: 0.95    # <1 más rápido (0.95 ≈ 150 palabras/min)
   titulos_en_pantalla: true
   # Efectos
   subtitulos: true            # subtítulos dinámicos: la palabra que se dice se ilumina

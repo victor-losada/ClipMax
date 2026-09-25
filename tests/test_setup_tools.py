@@ -48,12 +48,29 @@ def test_existing_files_are_not_downloaded_again(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_tools, "MODELS", tmp_path / "models")
     monkeypatch.setattr(setup_tools, "BIN", tmp_path / "bin")
     (tmp_path / "models").mkdir()
-    (tmp_path / "models" / "ggml-base.bin").write_bytes(b"x")
+    for name in ("ggml-base.bin", "es_MX-claude-high.onnx", "es_MX-claude-high.onnx.json"):
+        (tmp_path / "models" / name).write_bytes(b"x")
     exe = tmp_path / "bin" / "whisper" / "Release" / "whisper-cli.exe"
     exe.parent.mkdir(parents=True)
     exe.write_bytes(b"x")
     monkeypatch.setattr(setup_tools, "_fetch", lambda *a: (_ for _ in ()).throw(AssertionError("no debería descargar")))
     assert setup_tools.run(["base"], ffmpeg=False, cuda=False, vad=False, skip_whisper=False) is True
+
+
+def test_narrator_voice_is_downloaded_with_its_config(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup_tools, "MODELS", tmp_path)
+    urls = []
+
+    def fake_fetch(url, dest, context):
+        urls.append(url)
+        dest.write_bytes(b"v")
+        return dest
+
+    monkeypatch.setattr(setup_tools, "_fetch", fake_fetch)
+    setup_tools.install_voice("es_MX-claude-high")
+    base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_MX/claude/high/"
+    assert urls == [base + "es_MX-claude-high.onnx", base + "es_MX-claude-high.onnx.json"]
+    assert (tmp_path / "es_MX-claude-high.onnx").exists() and (tmp_path / "es_MX-claude-high.onnx.json").exists()
 
 
 def test_configure_ssl_uses_truststore():

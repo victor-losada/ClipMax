@@ -59,6 +59,7 @@
     </div>
     <label class="row"><input type="checkbox" id="ed_tiktok"> Exportar clips verticales para TikTok de los mejores momentos</label>
     <label class="row"><input type="checkbox" id="ed_tkres"> Resumen del día para TikTok (vertical, máximo <input id="ed_tkmax" type="number" min="30" max="600" style="width:70px"> s)</label>
+    <label class="row"><input type="checkbox" id="ed_tknarr"> Con narrador en off (voz Piper: contadores, flashes y citas; sin voz sale con texto en pantalla)</label>
     <h3>Clips para TikTok en vivo</h3>
     <label class="row"><input type="checkbox" id="cv_activo"> Armar clips mientras se graba (se descargan desde el Panel)</label>
     <label class="row"><input type="checkbox" id="cv_claude"> Que Claude elija corte, título y caption (<span id="cv_modelo"></span>, ~$0.005 por clip)</label>
@@ -86,7 +87,7 @@
 <h2>Streamers</h2>
 <div class="card">
   <table>
-    <thead><tr><th>Activo</th><th>Nombre</th><th>URL de Kick</th><th>Modo</th><th>Prioridad</th><th>Alias (coma)</th><th>Voz en vivo</th><th>Cámara</th><th></th></tr></thead>
+    <thead><tr><th>Activo</th><th>Nombre</th><th>URL de Kick</th><th>Modo</th><th>Prioridad</th><th>Alias (coma)</th><th title="Cómo lo dice el narrador del resumen TikTok (ej. Güéstcol)">Pronunciación</th><th>Voz en vivo</th><th>Cámara</th><th></th></tr></thead>
     <tbody id="tbl"></tbody>
   </table>
   <div class="row" style="margin-top:10px"><button class="sec" onclick="addRow()">+ Agregar streamer</button>
@@ -112,6 +113,7 @@ function fill() {
   $("ed_min").value = ed.duracion_min_min; $("ed_max").value = ed.duracion_max_min; $("ed_sil").value = ed.silencio_max_s;
   $("ed_tiktok").checked = ed.exportar_clips_tiktok;
   $("ed_tkres").checked = ed.resumen_tiktok !== false; $("ed_tkmax").value = ed.resumen_tiktok_max_s || 240;
+  $("ed_tknarr").checked = ed.tiktok_narrado !== false;
   const cv = CFG.clips_vivo;
   $("cv_activo").checked = cv.activo; $("cv_claude").checked = cv.usar_claude; $("cv_modelo").textContent = cv.modelo;
   $("cv_hora").value = cv.max_por_hora; $("cv_min").value = cv.duracion_min_s; $("cv_max").value = cv.duracion_max_s;
@@ -126,15 +128,17 @@ function fill() {
 function addRow(s) {
   s = s || { nombre: "", url: "https://kick.com/", modo: "juego_cara", activo: true, prioridad: 1, alias: [], transcribir_en_vivo: false, camara: null, slug: "" };
   const tr = document.createElement("tr");
-  tr.dataset.extra = JSON.stringify({ camara: s.camara, chatroom_id: s.chatroom_id ?? null });
+  tr.dataset.extra = JSON.stringify({ camara: s.camara, zona_chat: s.zona_chat ?? null, color: s.color || "",
+                                      chatroom_id: s.chatroom_id ?? null });
   tr.innerHTML = `<td><input type="checkbox" class="f-activo" ${s.activo ? "checked" : ""}></td>
     <td><input class="f-nombre" value="${esc(s.nombre)}" style="width:130px" onchange="pairOptions()"></td>
     <td><input class="f-url" value="${esc(s.url)}" style="width:210px" onchange="pairOptions()"></td>
     <td><select class="f-modo"><option value="juego_cara">juego + cara</option><option value="cara">solo cara</option></select></td>
     <td><input class="f-prio" type="number" step="0.1" min="0.1" value="${s.prioridad}" style="width:70px"></td>
     <td><input class="f-alias" value="${esc((s.alias || []).join(", "))}" style="width:180px"></td>
+    <td><input class="f-pron" value="${esc(s.pronunciacion || "")}" placeholder="—" style="width:110px"></td>
     <td><input type="checkbox" class="f-vivo" ${s.transcribir_en_vivo ? "checked" : ""}></td>
-    <td>${s.slug ? `<a href="/camara/${esc(s.slug)}">${s.camara ? "✔ ajustar" : "definir"}</a>` : '<span class="mut small">guarda primero</span>'}</td>
+    <td>${s.slug ? `<a href="/camara/${esc(s.slug)}">${s.camara ? "✔ cámara" : "definir cámara"}${s.zona_chat ? " · ✔ chat" : ""}</a>` : '<span class="mut small">guarda primero</span>'}</td>
     <td><button class="sec" onclick="this.closest('tr').remove(); pairOptions()">✕</button></td>`;
   tr.querySelector(".f-modo").value = s.modo;
   $("tbl").appendChild(tr);
@@ -172,6 +176,7 @@ async function save() {
     duracion_max_min: parseFloat($("ed_max").value), silencio_max_s: parseFloat($("ed_sil").value),
     exportar_clips_tiktok: $("ed_tiktok").checked,
     resumen_tiktok: $("ed_tkres").checked, resumen_tiktok_max_s: parseInt($("ed_tkmax").value || "240"),
+    tiktok_narrado: $("ed_tknarr").checked,
     subtitulos: $("fx_subs").checked, subtitulos_palabras: parseInt($("fx_palabras").value),
     zoom: $("fx_zoom").checked, pantalla_dividida: $("fx_split").checked,
     efectos_sonido: $("fx_sfx").checked, sfx_max_por_video: parseInt($("fx_max").value || "0"),
@@ -187,6 +192,7 @@ async function save() {
     prioridad: parseFloat(tr.querySelector(".f-prio").value || "1"),
     alias: tr.querySelector(".f-alias").value.split(",").map(a => a.trim()).filter(Boolean),
     transcribir_en_vivo: tr.querySelector(".f-vivo").checked,
+    pronunciacion: tr.querySelector(".f-pron").value.trim(),
   })).filter(s => s.url && s.url !== "https://kick.com/");
   try { const r = await api("/api/config", cfg); toast(r.aviso); setTimeout(() => location.reload(), 900); }
   catch (e) { toast("Error: " + e.message, 6000); }

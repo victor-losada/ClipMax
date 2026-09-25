@@ -32,32 +32,29 @@ Descarta el gameplay sin conversación (minar, construir, farmear), la lectura d
 - La suma de los clips debe quedar entre {{duracion_min}} y {{duracion_max}} minutos. Si el material bueno no alcanza el mínimo, entrega un video más corto antes que rellenar con gameplay, y explícalo en `notas_editor`.
 - Dale a cada clip una `prioridad` de 1 a 5 (5 = imprescindible). Si el video se pasa del máximo, el editor quita primero los de prioridad baja. Los silencios largos dentro de cada clip se recortan automáticamente.
 
-## Guion
-
-Escribe el resumen como la historia del día, no como una lista de clips:
-
-- Abre con un gancho: una línea de narración que prometa el mejor momento, o directamente el clip más fuerte.
-- Agrupa por arcos (el pique principal, las alianzas, el caos del día) y respeta el orden cronológico dentro de cada arco.
-- Entre clips, narración de 1 a 3 frases cortas (unas 35 palabras como máximo), con tono de narrador de lore y algo de humor, en español neutro con toques colombianos. Explica lo mínimo necesario para entender el siguiente clip.
-- Cierra con un cliffhanger o una pregunta para mañana.
-- El chipeo se muestra tal cual, pero la narración no suma insultos, ataques personales ni burlas por lo que alguien es. No inventes datos (puntos, muertes, premios, eliminaciones) que no estén en el material.
-- `titulo_en_pantalla`: frase corta en mayúsculas (unas 6 palabras) que se superpone al inicio del clip.
-
-## Efectos (con criterio)
-
-El video lleva subtítulos dinámicos automáticos. Además, en cada clip puedes marcar:
-
-- `momento_clave`: el segundo exacto del remate (la frase que pega, la reacción), en el mismo reloj que `inicio`/`fin` y dentro de ese rango. Ahí entra un zoom suave. Usa 0 si el clip no tiene un remate claro.
-- `efecto_sonido`: suena en el `momento_clave`. Disponibles: {{efectos}}. Úsalo solo cuando sume: un golpe en la humillación, una campana cuando alguien suelta algo que no debía. Como máximo {{max_efectos}} en todo el video; lo normal es menos. Deja "" en el resto.
-- `pantalla_dividida_con`: si el candidato tiene "Mismo suceso que: candidato N", puedes poner ese N para mostrar a los dos streamers a la par (se escucha solo el audio del clip principal). Úsalo cuando ver la cara del otro al mismo tiempo sea el chiste, por ejemplo en el chipeo en vivo. Usa 0 en los demás.
+{{guia_estilo}}
 
 ## Documento de mejores momentos
 
 Elige de 8 a 15 mejores momentos del día (pueden coincidir con clips del video): cada uno se exporta como clip vertical para TikTok, así que incluye todo lo que funcione solo, no solo lo más grande. Cada uno de 15 a 60 segundos. Para cada uno: título, por qué importa (qué cambia en la historia del torneo o por qué la comunidad lo va a comentar), 3 captions para TikTok (máximo 150 caracteres, con el gancho en las primeras palabras, sin spoilear el remate) y de 3 a 6 hashtags, incluyendo #{{hashtag}}.
 
-## Resumen del día para TikTok
+## Resumen del día para TikTok (narrado)
 
-Arma también `resumen_tiktok`: el día contado en vertical en máximo {{tiktok_max_s}} segundos, sin tarjetas de narración. Son de 4 a 10 tramos de 8 a 40 segundos cada uno (`candidato_id`, `inicio`, `fin` y `momento_clave` como en el guion). El `texto_en_pantalla` (máximo 50 caracteres) es lo que cuenta la historia entre tramos: quién, contra quién, qué pasó. El primer tramo es el momento más fuerte del día, con gancho en los primeros 3 segundos; después sigue el orden en que pasaron las cosas. La suma de los tramos no puede pasar de {{tiktok_max_s}} segundos. `caption_resumen_tiktok`: máximo 150 caracteres más 3 a 5 hashtags con #{{hashtag}}.
+Además, escribe el guion de un resumen vertical de máximo {{tiktok_max_s}} segundos. Un narrador en off (voz sintética, unas 150 palabras por minuto, sin pausas) cuenta el día en tercera persona, en orden cronológico, sobre cortes rápidos de los clips. En los momentos clave se oye la voz real del streamer en una cita corta.
+
+- `tiktok_contadores`: de 2 a 4 cifras clave del día que se muestran siempre en las esquinas del video y suben cuando el narrador lo dice. `id` en minúsculas sin espacios (por ejemplo `eliminados`), `etiqueta` corta en mayúsculas ("ELIMINADOS"), `icono` (calavera | corazon | espada | estrella | diamante | casa | rayo | trofeo) y `inicial` (normalmente 0).
+- `tiktok_intro`: una frase que anticipa las cifras, por ejemplo: "Hoy en el {{evento}} tuvimos 3 eliminados, 2 alianzas rotas y un juicio que nadie vio venir". Las cifras deben coincidir con la suma final de los contadores.
+- `resumen_tiktok`: de 10 a 18 hechos, uno cada 10 a 20 segundos. Cada uno lleva:
+  - `narracion`: una frase de 8 a 15 palabras (sujeto + verbo + causa) que empieza con un conector: "Luego", "Seguido de", "Más tarde", "Rápidamente", "Finalmente"… Cuenta el hecho y su consecuencia, sin opinar ni insultar.
+  - `candidato_id`, `inicio`, `fin` y `momento_clave`: el tramo que se ve mientras se narra, como en el guion. Termina poco después del momento clave.
+  - `tipo_evento`: muerte | explosion | anuncio | pique | alianza | traicion | logro | otro.
+  - `contador` (el `id` de un contador, o "") y `suma` (cuánto cambia; 0 si no cambia).
+  - `palabra_clave`: una palabra literal de la `narracion` donde ocurre el golpe visual (flash de color y, si aplica, el contador sube). Por ejemplo "eliminado", "robó", "explotó".
+  - `cita_inicio` y `cita_fin`: si vale la pena escuchar al streamer, entre 2 y 5 segundos de su voz real con la frase que remata el hecho (el mismo reloj del candidato). Si no, pon 0 y 0. Usa entre 3 y 6 citas en todo el resumen, sobre todo en el chipeo de {{pareja_a}} y {{pareja_b}}.
+  - `texto_en_pantalla`: un titular de hasta 50 caracteres (por si el video se arma sin narrador).
+  - `prioridad` de 1 a 5: si el video se pasa de {{tiktok_max_s}} segundos, se quitan primero los de menor prioridad.
+- `tiktok_cierre`: una llamada a la acción de una o dos frases, por ejemplo: "Si quieres ver lo que pasa mañana en el {{evento}}, solo sígueme para que no te lo pierdas".
+- `caption_resumen_tiktok`: máximo 150 caracteres más 3 a 5 hashtags, con #{{hashtag}}.
 
 Escribe también `lore_para_manana`: de 3 a 6 líneas con el estado de las rivalidades y alianzas al final del día y los hilos que quedan abiertos (qué falta por ver). Mañana lo vas a recibir como memoria, y también se lo pasamos al investigador de X para que busque cómo siguen.
 
@@ -71,12 +68,21 @@ Responde únicamente con un objeto JSON con esta forma (sin texto antes ni despu
   "resumen_del_dia": "string, 2 a 4 párrafos",
   "lore_para_manana": "string, 3 a 6 líneas",
   "guion": [
+    {"tipo": "gancho", "texto": "", "candidato_id": 12, "inicio": 41.6, "fin": 43.2,
+     "titulo_en_pantalla": "", "prioridad": 5, "motivo": "", "momento_clave": 0, "efecto_sonido": "",
+     "pantalla_dividida_con": 0, "bloque": "gancho", "emociones": [], "zoom_texto": [], "facecam_completo": [],
+     "rotulo": "", "conservar_silencios": false, "zoom_final": false, "repeticiones": 3},
     {"tipo": "narracion", "texto": "string", "candidato_id": 0, "inicio": 0, "fin": 0,
-     "titulo_en_pantalla": "", "prioridad": 5, "motivo": "",
-     "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0},
+     "titulo_en_pantalla": "", "prioridad": 5, "motivo": "", "momento_clave": 0, "efecto_sonido": "",
+     "pantalla_dividida_con": 0, "bloque": "premisa", "emociones": [], "zoom_texto": [], "facecam_completo": [],
+     "rotulo": "", "conservar_silencios": false, "zoom_final": false, "repeticiones": 0},
     {"tipo": "clip", "texto": "", "candidato_id": 12, "inicio": 8.5, "fin": 61.0,
-     "titulo_en_pantalla": "GEAR RESPONDE", "prioridad": 5, "motivo": "por qué entra este corte",
-     "momento_clave": 42.3, "efecto_sonido": "boom", "pantalla_dividida_con": 15}
+     "titulo_en_pantalla": "", "prioridad": 5, "motivo": "por qué entra este corte",
+     "momento_clave": 42.3, "efecto_sonido": "", "pantalla_dividida_con": 0, "bloque": "cuerpo",
+     "emociones": [{"t": 42.3, "tipo": "rabia", "texto": "ME ROBÓ"}],
+     "zoom_texto": [{"t": 38.0, "zona": "chat", "texto": "el mensaje que lo hizo reaccionar"}],
+     "facecam_completo": [{"inicio": 42.0, "fin": 47.0}], "rotulo": "", "conservar_silencios": false,
+     "zoom_final": false, "repeticiones": 0}
   ],
   "mejores_momentos": [
     {"candidato_id": 12, "inicio": 8.5, "fin": 61.0, "titulo": "string", "por_que_importa": "string",
@@ -84,11 +90,17 @@ Responde únicamente con un objeto JSON con esta forma (sin texto antes ni despu
   ],
   "descartados": [{"candidato_id": 3, "motivo": "gameplay sin conversación"}],
   "notas_editor": "string",
+  "tiktok_contadores": [{"id": "eliminados", "etiqueta": "ELIMINADOS", "icono": "calavera", "inicial": 0}],
+  "tiktok_intro": "Hoy en el {{evento}} tuvimos ...",
   "resumen_tiktok": [
-    {"candidato_id": 12, "inicio": 30.0, "fin": 52.0, "texto_en_pantalla": "WESTCOL LO DIJO EN VIVO", "momento_clave": 44.0}
+    {"candidato_id": 12, "inicio": 30.0, "fin": 52.0, "texto_en_pantalla": "WESTCOL LO DIJO EN VIVO",
+     "momento_clave": 44.0, "narracion": "Luego, Westcol eliminó a Spreen con una trampa de lava en su propia base.",
+     "tipo_evento": "muerte", "contador": "eliminados", "suma": 1, "palabra_clave": "eliminó",
+     "cita_inicio": 44.0, "cita_fin": 47.5, "prioridad": 5}
   ],
+  "tiktok_cierre": "Si quieres ver lo que pasa mañana, solo sígueme para que no te lo pierdas.",
   "caption_resumen_tiktok": "string con hashtags"
 }
 ```
 
-En los elementos de tipo `narracion`, `candidato_id`, `inicio`, `fin`, `momento_clave` y `pantalla_dividida_con` van en 0 y `efecto_sonido` vacío. En los de tipo `clip`, `texto` va vacío.
+En los elementos de tipo `narracion`, `candidato_id`, `inicio`, `fin`, `momento_clave`, `pantalla_dividida_con` y `repeticiones` van en 0, `efecto_sonido` vacío y las listas vacías. En los de tipo `clip` y `gancho`, `texto` va vacío. Todos los tiempos (`inicio`, `fin`, `momento_clave`, `t` de `emociones` y `zoom_texto`, y los de `facecam_completo`) usan el reloj del candidato.
