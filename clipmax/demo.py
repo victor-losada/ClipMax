@@ -152,9 +152,28 @@ def _canned_decision(candidates: list[dict]) -> dict:
                 "titulo": f"Chipeo #{i}", "por_que_importa": "Ejemplo generado por la demo.",
                 "captions_tiktok": ["Westcol no se aguantó 😂", "Gear lo dijo en vivo 👀", "Esto no termina aquí"],
                 "hashtags": ["#Desafio4", "#Westcol", "#Kick"]} for i, c in enumerate(top[:2], 1)]
+    # Resumen TikTok narrado (ficha vertical): contadores, un hecho por candidato y una cita.
+    hechos = [("Todo empezó con Westcol y Gear of Nos discutiendo por la mina.", "pique", "", 0, "mina"),
+              ("Entonces Westcol cayó a la lava y murió por primera vez.", "muerte", "muertes", 1, "murió"),
+              ("Al final Gear of Nos sumó un aliado y juró venganza.", "alianza", "aliados", 1, "aliado")]
+    tiktok = []
+    for (texto, tipo, contador, suma, clave), c in zip(hechos, top):
+        fin = min(c["duracion"] - 1, 40.0)
+        lines = [(a, b) for a, b, _t in c.get("transcripcion", []) if 5 < a < fin - 3]
+        cita = (lines[0][0], min(lines[0][0] + 3.0, fin)) if lines and tipo == "muerte" else (0.0, 0.0)
+        tiktok.append({"candidato_id": c["id"], "inicio": 3.0, "fin": fin, "texto_en_pantalla": "",
+                       "momento_clave": (lines[0][0] + 1.0) if lines else 0, "narracion": texto, "tipo_evento": tipo,
+                       "contador": contador, "suma": suma, "palabra_clave": clave, "cita_inicio": cita[0],
+                       "cita_fin": cita[1], "prioridad": 5 if tipo == "muerte" else 3})
     return {"titulo_video": "Demo · El robo de los diamantes", "resumen_del_dia": "Resumen de demostración.",
             "lore_para_manana": "Gear amenazó con quemar la base de Westcol.", "guion": guion,
-            "mejores_momentos": mejores, "descartados": [], "notas_editor": "Decisión sintética de la demo."}
+            "mejores_momentos": mejores, "descartados": [], "notas_editor": "Decisión sintética de la demo.",
+            "resumen_tiktok": tiktok,
+            "tiktok_contadores": [{"id": "muertes", "etiqueta": "Muertes", "icono": "calavera", "inicial": 0},
+                                  {"id": "aliados", "etiqueta": "Aliados", "icono": "corazon", "inicial": 2}],
+            "tiktok_intro": "Día de prueba: 1 muerte, 3 aliados y una mina que nadie quiso compartir.",
+            "tiktok_cierre": "Sígueme para no perderte el próximo día.",
+            "caption_resumen_tiktok": "El día de prueba en 1 minuto #Desafio4"}
 
 
 def run_demo(use_claude: bool = False, minutes: float = 6.0) -> None:

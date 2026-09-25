@@ -98,7 +98,7 @@ OUTPUT_SCHEMA = {
             },
         },
         "notas_editor": {"type": "string"},
-        # Resumen vertical para TikTok (máximo ~4 min): tramos cortos, el texto en pantalla cuenta la historia.
+        # Resumen vertical para TikTok (máximo ~4 min), narrado en off (prompts/prompt_maestro.md).
         "resumen_tiktok": {
             "type": "array",
             "items": {
@@ -109,15 +109,44 @@ OUTPUT_SCHEMA = {
                     "fin": {"type": "number"},
                     "texto_en_pantalla": {"type": "string"},
                     "momento_clave": {"type": "number"},
+                    "narracion": {"type": "string"},
+                    "tipo_evento": {"type": "string", "enum": ["muerte", "explosion", "anuncio", "pique", "alianza",
+                                                               "traicion", "logro", "otro"]},
+                    "contador": {"type": "string"},
+                    "suma": {"type": "integer"},
+                    "palabra_clave": {"type": "string"},
+                    "cita_inicio": {"type": "number"},
+                    "cita_fin": {"type": "number"},
+                    "prioridad": {"type": "integer"},
                 },
-                "required": ["candidato_id", "inicio", "fin", "texto_en_pantalla", "momento_clave"],
+                "required": ["candidato_id", "inicio", "fin", "texto_en_pantalla", "momento_clave", "narracion",
+                             "tipo_evento", "contador", "suma", "palabra_clave", "cita_inicio", "cita_fin",
+                             "prioridad"],
+                "additionalProperties": False,
+            },
+        },
+        "tiktok_intro": {"type": "string"},
+        "tiktok_cierre": {"type": "string"},
+        "tiktok_contadores": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "etiqueta": {"type": "string"},
+                    "icono": {"type": "string", "enum": ["calavera", "corazon", "espada", "estrella", "diamante",
+                                                         "casa", "rayo", "trofeo"]},
+                    "inicial": {"type": "integer"},
+                },
+                "required": ["id", "etiqueta", "icono", "inicial"],
                 "additionalProperties": False,
             },
         },
         "caption_resumen_tiktok": {"type": "string"},
     },
     "required": ["titulo_video", "resumen_del_dia", "lore_para_manana", "guion",
-                 "mejores_momentos", "descartados", "notas_editor", "resumen_tiktok", "caption_resumen_tiktok"],
+                 "mejores_momentos", "descartados", "notas_editor", "resumen_tiktok", "tiktok_intro",
+                 "tiktok_cierre", "tiktok_contadores", "caption_resumen_tiktok"],
     "additionalProperties": False,
 }
 

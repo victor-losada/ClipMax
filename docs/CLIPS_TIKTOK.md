@@ -28,6 +28,30 @@ Configuración → "Clips para TikTok en vivo": activar/desactivar, usar Claude 
 
 ## Resumen del día para TikTok
 
-Claude elige de 4 a 10 tramos cortos (8–40 s) que cuentan el día: primero el momento más fuerte (gancho) y luego en orden. No lleva tarjetas de narración: el texto en pantalla de cada tramo cuenta la historia. El total nunca pasa de `edicion.resumen_tiktok_max_s` (240 s por defecto). El caption sale en la página de la sesión, con botón para copiarlo.
+Sigue la ficha "resumen vertical, formato corto". Un **narrador en off** (voz Piper, local y gratis) cuenta el día en frases cortas de 8 a 15 palabras. Cada frase va sobre cortes rápidos del momento que describe. No lleva música.
 
-Para rehacerlo sin volver a pagar a Claude: Sesión → paso **editar** → "desde aquí". Si la decisión es de antes de esta función, el resumen se arma solo a partir de los mejores momentos.
+**Pantalla (1080x1920)**
+- El clip 16:9 va centrado a lo ancho (un tercio de la altura) sobre el mismo clip desenfocado.
+- **Contadores** en las esquinas superiores del clip (ícono + cifra: muertes, aliados, diamantes…). Los define Claude para cada día.
+- **Subtítulos** justo debajo del clip, en bloques de 1 a 3 palabras. La palabra que se dice va en amarillo y un poco más grande. Nombres y cifras siempre en amarillo.
+- Opcional: `assets\perfil.png` (tu tarjeta de perfil) va abajo en todo el video, y `assets\logo.png` aparece en la intro.
+
+**Estructura**
+1. **Intro** (unos 5 s). La foto del día se revela con un efecto pixel y hace un paneo-zoom lento. El narrador dice las cifras del día ("Día 4: 3 muertes, una alianza rota…"). Los contadores aparecen grandes, con un flash en cada cifra, y luego pasan a las esquinas.
+2. **Hechos**, uno tras otro (10 a 18). Cada uno empieza con un conector ("Pero entonces…", "Mientras tanto…") y lleva:
+   - cortes cada ~1.6 s de ese momento, con el juego muy bajo bajo la voz;
+   - un **flash de color** en la palabra clave: rojo en muertes y explosiones, verde en alianzas y logros, amarillo en anuncios y piques, naranja en traiciones;
+   - el **contador sube o baja** justo en esa palabra, con un "pop";
+   - en muertes y explosiones, una **ráfaga de micro-cortes** con un **cuadro de impacto** (líneas radiales) en la palabra;
+   - en 3 a 6 hechos, una **cita** de 2 a 5 s con la voz real del streamer ("¡NO PUEDE SER!"). La cita lleva punch-ins a la cara y zoom a textos, como en el resumen horizontal.
+3. **Cierre**: un flash, un primerísimo plano de la cara (0.25 s), "SÍGUEME" con una flecha animada y un fundido de 3 s.
+
+El audio va comprimido y fuerte (unos -12 LUFS), como en TikTok. El total nunca pasa de `edicion.resumen_tiktok_max_s` (240 s): si se pasa, se quitan primero los hechos de menor prioridad.
+
+**La voz del narrador**
+- Se baja con `python arrancar.py descargar --sin-whisper` (voz `es_MX-claude-high`, unos 110 MB, en `models\`). `doctor` avisa si falta.
+- Si un nombre suena mal (p. ej. "Westcol" leído en español), pon en Configuración → streamers → `pronunciacion` cómo debe decirlo (`Güéstcol`). Los subtítulos siguen escribiendo el nombre real.
+- `edicion.narrador_velocidad`: 0.95 ≈ 150 palabras por minuto; menos es más rápido.
+- Sin voz, o con `edicion.tiktok_narrado: false`, el resumen sale como antes: tramos seguidos con el texto en pantalla.
+
+El caption sale en la página de la sesión, con botón para copiarlo. Para rehacerlo sin volver a pagar a Claude: Sesión → paso **editar** → "desde aquí". Las decisiones de antes de esta función no traen narración y salen con el formato de texto en pantalla.

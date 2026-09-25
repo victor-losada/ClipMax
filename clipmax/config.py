@@ -150,6 +150,8 @@ DEFAULTS: dict[str, Any] = {
         "exportar_clips_tiktok": True,
         "resumen_tiktok": True,        # además del resumen horizontal, uno vertical para TikTok
         "resumen_tiktok_max_s": 240,   # 4 minutos
+        "tiktok_narrado": True,        # narrador en off (Piper) según la ficha vertical; si no hay voz, texto
+        "narrador_velocidad": 0.95,    # <1 más rápido (0.95 ≈ 150 palabras/min)
         "titulos_en_pantalla": True,
         # Efectos (ver clipmax/effects.py)
         "subtitulos": True,            # subtítulos dinámicos: la palabra que se dice se ilumina
@@ -241,6 +243,7 @@ def _normalize_streamer(raw: dict, index: int) -> dict:
         "camara": None,
         "zona_chat": None,     # recuadro del chat que el streamer muestra en pantalla (zoom a textos)
         "color": "",           # color de sus captions (#RRGGBB); vacío = uno de la paleta
+        "pronunciacion": "",   # cómo debe leer su nombre el narrador (ej. "Güéstcol"); vacío = como se escribe
         "chatroom_id": None,
     }
     s.update({k: v for k, v in raw.items() if v is not None or k in ("camara", "zona_chat", "chatroom_id")})

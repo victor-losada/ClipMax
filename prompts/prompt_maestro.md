@@ -38,9 +38,23 @@ Descarta el gameplay sin conversación (minar, construir, farmear), la lectura d
 
 Elige de 8 a 15 mejores momentos del día (pueden coincidir con clips del video): cada uno se exporta como clip vertical para TikTok, así que incluye todo lo que funcione solo, no solo lo más grande. Cada uno de 15 a 60 segundos. Para cada uno: título, por qué importa (qué cambia en la historia del torneo o por qué la comunidad lo va a comentar), 3 captions para TikTok (máximo 150 caracteres, con el gancho en las primeras palabras, sin spoilear el remate) y de 3 a 6 hashtags, incluyendo #{{hashtag}}.
 
-## Resumen del día para TikTok
+## Resumen del día para TikTok (narrado)
 
-Arma también `resumen_tiktok`: el día contado en vertical en máximo {{tiktok_max_s}} segundos, sin tarjetas de narración. Son de 4 a 10 tramos de 8 a 40 segundos cada uno (`candidato_id`, `inicio`, `fin` y `momento_clave` como en el guion). El `texto_en_pantalla` (máximo 50 caracteres) es lo que cuenta la historia entre tramos: quién, contra quién, qué pasó. El primer tramo es el momento más fuerte del día, con gancho en los primeros 3 segundos; después sigue el orden en que pasaron las cosas. La suma de los tramos no puede pasar de {{tiktok_max_s}} segundos. `caption_resumen_tiktok`: máximo 150 caracteres más 3 a 5 hashtags con #{{hashtag}}.
+Además, escribe el guion de un resumen vertical de máximo {{tiktok_max_s}} segundos. Un narrador en off (voz sintética, unas 150 palabras por minuto, sin pausas) cuenta el día en tercera persona, en orden cronológico, sobre cortes rápidos de los clips. En los momentos clave se oye la voz real del streamer en una cita corta.
+
+- `tiktok_contadores`: de 2 a 4 cifras clave del día que se muestran siempre en las esquinas del video y suben cuando el narrador lo dice. `id` en minúsculas sin espacios (por ejemplo `eliminados`), `etiqueta` corta en mayúsculas ("ELIMINADOS"), `icono` (calavera | corazon | espada | estrella | diamante | casa | rayo | trofeo) y `inicial` (normalmente 0).
+- `tiktok_intro`: una frase que anticipa las cifras, por ejemplo: "Hoy en el {{evento}} tuvimos 3 eliminados, 2 alianzas rotas y un juicio que nadie vio venir". Las cifras deben coincidir con la suma final de los contadores.
+- `resumen_tiktok`: de 10 a 18 hechos, uno cada 10 a 20 segundos. Cada uno lleva:
+  - `narracion`: una frase de 8 a 15 palabras (sujeto + verbo + causa) que empieza con un conector: "Luego", "Seguido de", "Más tarde", "Rápidamente", "Finalmente"… Cuenta el hecho y su consecuencia, sin opinar ni insultar.
+  - `candidato_id`, `inicio`, `fin` y `momento_clave`: el tramo que se ve mientras se narra, como en el guion. Termina poco después del momento clave.
+  - `tipo_evento`: muerte | explosion | anuncio | pique | alianza | traicion | logro | otro.
+  - `contador` (el `id` de un contador, o "") y `suma` (cuánto cambia; 0 si no cambia).
+  - `palabra_clave`: una palabra literal de la `narracion` donde ocurre el golpe visual (flash de color y, si aplica, el contador sube). Por ejemplo "eliminado", "robó", "explotó".
+  - `cita_inicio` y `cita_fin`: si vale la pena escuchar al streamer, entre 2 y 5 segundos de su voz real con la frase que remata el hecho (el mismo reloj del candidato). Si no, pon 0 y 0. Usa entre 3 y 6 citas en todo el resumen, sobre todo en el chipeo de {{pareja_a}} y {{pareja_b}}.
+  - `texto_en_pantalla`: un titular de hasta 50 caracteres (por si el video se arma sin narrador).
+  - `prioridad` de 1 a 5: si el video se pasa de {{tiktok_max_s}} segundos, se quitan primero los de menor prioridad.
+- `tiktok_cierre`: una llamada a la acción de una o dos frases, por ejemplo: "Si quieres ver lo que pasa mañana en el {{evento}}, solo sígueme para que no te lo pierdas".
+- `caption_resumen_tiktok`: máximo 150 caracteres más 3 a 5 hashtags, con #{{hashtag}}.
 
 Escribe también `lore_para_manana`: de 3 a 6 líneas con el estado de las rivalidades y alianzas al final del día y los hilos que quedan abiertos (qué falta por ver). Mañana lo vas a recibir como memoria, y también se lo pasamos al investigador de X para que busque cómo siguen.
 
@@ -76,9 +90,15 @@ Responde únicamente con un objeto JSON con esta forma (sin texto antes ni despu
   ],
   "descartados": [{"candidato_id": 3, "motivo": "gameplay sin conversación"}],
   "notas_editor": "string",
+  "tiktok_contadores": [{"id": "eliminados", "etiqueta": "ELIMINADOS", "icono": "calavera", "inicial": 0}],
+  "tiktok_intro": "Hoy en el {{evento}} tuvimos ...",
   "resumen_tiktok": [
-    {"candidato_id": 12, "inicio": 30.0, "fin": 52.0, "texto_en_pantalla": "WESTCOL LO DIJO EN VIVO", "momento_clave": 44.0}
+    {"candidato_id": 12, "inicio": 30.0, "fin": 52.0, "texto_en_pantalla": "WESTCOL LO DIJO EN VIVO",
+     "momento_clave": 44.0, "narracion": "Luego, Westcol eliminó a Spreen con una trampa de lava en su propia base.",
+     "tipo_evento": "muerte", "contador": "eliminados", "suma": 1, "palabra_clave": "eliminó",
+     "cita_inicio": 44.0, "cita_fin": 47.5, "prioridad": 5}
   ],
+  "tiktok_cierre": "Si quieres ver lo que pasa mañana, solo sígueme para que no te lo pierdas.",
   "caption_resumen_tiktok": "string con hashtags"
 }
 ```

@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from .config import session_dir
+from .mentions import normalize
 from .db import Database
 from .prompts import CLIP_SCHEMA, OUTPUT_SCHEMA, clip_prompt, master_prompt
 
@@ -372,6 +373,8 @@ def _num(v, default=0.0) -> float:
 
 
 BLOQUES = ["gancho", "premisa", "cuerpo", "subida", "pausa", "climax", "desenlace", "cierre"]
+TIPOS_EVENTO = ["muerte", "explosion", "anuncio", "pique", "alianza", "traicion", "logro", "otro"]
+ICONOS = ["calavera", "corazon", "espada", "estrella", "diamante", "casa", "rayo", "trofeo"]
 EMOCIONES = ["queja", "susto", "rabia", "risa", "sorpresa", "grito"]
 ZONAS_TEXTO = ["chat", "juego", "centro", "arriba"]
 
@@ -526,8 +529,20 @@ def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dic
             "captions_tiktok": [str(c).strip() for c in (m.get("captions_tiktok") or []) if str(c).strip()][:5],
             "hashtags": [("#" + str(h).lstrip("#")).replace(" ", "") for h in (m.get("hashtags") or []) if str(h).strip()][:8],
         })
-    # Resumen vertical para TikTok: tramos dentro de cada candidato y, en total, no más del máximo.
+    # Resumen vertical para TikTok. Narrado: lo que dura lo marca la narración (el render quita los de
+    # menor prioridad si se pasa). Sin narración (decisiones viejas): los tramos suman como mucho el máximo.
     tk_max = float(cfg["edicion"].get("resumen_tiktok_max_s", 240))
+    counters = []
+    for c in raw.get("tiktok_contadores") or []:
+        if not isinstance(c, dict):
+            continue
+        cid_ = re.sub(r"[^a-z0-9_]", "", str(c.get("id") or "").lower())
+        if cid_ and cid_ not in [x["id"] for x in counters] and len(counters) < 4:
+            icon = str(c.get("icono") or "estrella")
+            counters.append({"id": cid_, "etiqueta": str(c.get("etiqueta") or cid_).strip().upper()[:14],
+                             "icono": icon if icon in ICONOS else "estrella",
+                             "inicial": int(_num(c.get("inicial"), 0))})
+    counter_ids = {c["id"] for c in counters}
     resumen_tiktok, used = [], 0.0
     for i, t in enumerate(raw.get("resumen_tiktok") or []):
         cid = int(_num(t.get("candidato_id"), -1))
@@ -538,16 +553,36 @@ def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dic
         a = max(0.0, _num(t.get("inicio")))
         b = min(cand["duracion"], _num(t.get("fin"), cand["duracion"]))
         mom = _num(t.get("momento_clave"))
+        narr = re.sub(r"\s+", " ", str(t.get("narracion") or "")).strip()
         if b - a > 45:  # tramo muy largo para TikTok: se deja la parte del remate
             end = min(b, mom + 5) if a <= mom <= b else b
             a, b = max(a, end - 45), end
-        if b - a < 3 or used >= tk_max - 3:
+        if b - a < 3:
             continue
-        b = min(b, a + (tk_max - used))
-        used += b - a
-        resumen_tiktok.append({"candidato_id": cid, "inicio": round(a, 2), "fin": round(b, 2),
-                               "texto_en_pantalla": str(t.get("texto_en_pantalla") or "").strip()[:60],
-                               "momento_clave": round(mom, 2) if a <= mom <= b else 0.0})
+        if not narr:
+            if used >= tk_max - 3:
+                continue
+            b = min(b, a + (tk_max - used))
+            used += b - a
+        ca, cb = _num(t.get("cita_inicio")), _num(t.get("cita_fin"))
+        if not (0 <= ca < cb <= cand["duracion"] and 1.5 <= cb - ca <= 6.0):
+            ca = cb = 0.0
+        kw = str(t.get("palabra_clave") or "").strip()
+        if kw and f" {normalize(kw)} " not in f" {normalize(narr)} ":
+            kw = ""
+        tipo = str(t.get("tipo_evento") or "otro").lower()
+        counter = str(t.get("contador") or "").lower()
+        resumen_tiktok.append({
+            "candidato_id": cid, "inicio": round(a, 2), "fin": round(b, 2),
+            "texto_en_pantalla": str(t.get("texto_en_pantalla") or "").strip()[:60],
+            "momento_clave": round(mom, 2) if a <= mom <= b else 0.0,
+            "narracion": " ".join(narr.split()[:28]),
+            "tipo_evento": tipo if tipo in TIPOS_EVENTO else "otro",
+            "contador": counter if counter in counter_ids else "",
+            "suma": int(max(-5, min(5, _num(t.get("suma"), 0)))) if counter in counter_ids else 0,
+            "palabra_clave": kw, "cita_inicio": round(ca, 2), "cita_fin": round(cb, 2),
+            "prioridad": int(min(5, max(1, _num(t.get("prioridad"), 3)))),
+        })
     decision = {
         "titulo_video": str(raw.get("titulo_video") or f"{cfg['evento']['nombre']} · resumen").strip(),
         "resumen_del_dia": str(raw.get("resumen_del_dia") or "").strip(),
@@ -560,6 +595,9 @@ def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dic
         ],
         "notas_editor": str(raw.get("notas_editor") or "").strip(),
         "resumen_tiktok": resumen_tiktok,
+        "tiktok_contadores": counters,
+        "tiktok_intro": str(raw.get("tiktok_intro") or "").strip(),
+        "tiktok_cierre": str(raw.get("tiktok_cierre") or "").strip(),
         "caption_resumen_tiktok": str(raw.get("caption_resumen_tiktok") or "").strip(),
         "advertencias": warnings,
     }

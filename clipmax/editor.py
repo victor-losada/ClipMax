@@ -737,6 +737,19 @@ def render_tiktok_summary(cfg: dict, db: Database, session: dict, decision: dict
     """Resumen vertical 1080x1920 de máximo edicion.resumen_tiktok_max_s: tramos cortos seguidos, sin
     tarjetas; el texto en pantalla de cada tramo cuenta la historia."""
     fecha = session["fecha"]
+    if cfg["edicion"].get("tiktok_narrado", True) and any(e.get("narracion") for e in decision.get("resumen_tiktok") or []):
+        # Ficha vertical: narrador en off (Piper) con contadores, flashes y citas. Si falla, el de texto.
+        from . import narrator, tiktok_recap
+        if narrator.available(cfg):
+            try:
+                out = tiktok_recap.render_recap(cfg, db, session, decision, candidates, progress)
+                if out:
+                    return out
+            except Exception as exc:  # noqa: BLE001
+                log.error("Falló el resumen TikTok narrado (%s); se arma el de texto en pantalla", exc)
+        else:
+            log.warning("No está la voz del narrador (%s): el resumen TikTok sale sin narración. "
+                        "Instálala con 'python arrancar.py descargar --sin-whisper'", cfg["edicion"]["piper_voz"])
     items = decision.get("resumen_tiktok") or tiktok_summary_items(cfg, decision, candidates)
     if not items:
         log.info("Sin tramos para el resumen de TikTok")

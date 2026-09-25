@@ -156,6 +156,8 @@ edicion:
   exportar_clips_tiktok: true # un clip vertical por cada "mejor momento"
   resumen_tiktok: true        # además del resumen horizontal, uno vertical para TikTok…
   resumen_tiktok_max_s: 240   # …de máximo 4 minutos
+  tiktok_narrado: true        # resumen TikTok con narrador en off (voz Piper, piper_voz); sin voz sale con texto
+  narrador_velocidad: 0.95    # <1 más rápido (0.95 ≈ 150 palabras/min)
   titulos_en_pantalla: true
   # Efectos
   subtitulos: true            # subtítulos dinámicos: la palabra que se dice se ilumina

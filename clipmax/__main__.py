@@ -205,7 +205,8 @@ def cmd_descargar(args) -> None:
 
     # `--modelo` sin valores = ningún modelo (útil para bajar solo ffmpeg).
     models = ["base", "small"] if args.modelo is None else args.modelo
-    if not run(models, args.ffmpeg, args.cuda, args.vad, args.sin_whisper, args.forzar):
+    if not run(models, args.ffmpeg, args.cuda, args.vad, args.sin_whisper, args.forzar,
+               None if args.sin_voz else args.voz):
         sys.exit(1)
 
 
@@ -255,6 +256,14 @@ def cmd_doctor(args) -> None:
     for key in ("modelo_vivo", "modelo_calidad"):
         p = resolve_path(cfg["transcripcion"][key])
         line(p.exists(), f"modelo whisper ({key})", str(p))
+    if cfg["edicion"].get("resumen_tiktok") and cfg["edicion"].get("tiktok_narrado", True):
+        from . import narrator
+
+        if narrator.available(cfg):
+            line(True, "Narrador TikTok (Piper)", str(narrator.voice_path(cfg)))
+        else:
+            line(None, "Narrador TikTok (Piper)", f"falta la voz ({narrator.voice_path(cfg).name}) o piper-tts: "
+                 "python arrancar.py descargar --sin-whisper. Sin ella el resumen TikTok sale sin narrador")
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if cfg["claude"]["modo"] == "api":
         line(bool(key), "ANTHROPIC_API_KEY", "configurada" if key else "falta en .env (o usa claude.modo: manual)")
@@ -368,6 +377,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--vad", action="store_true", help="modelo VAD Silero (mejores cortes de voz)")
     p.add_argument("--sin-whisper", action="store_true", help="solo modelos / ffmpeg")
     p.add_argument("--forzar", action="store_true", help="reinstalar whisper.cpp aunque ya exista")
+    p.add_argument("--voz", default="es_MX-claude-high", help="voz de Piper para el narrador (TikTok)")
+    p.add_argument("--sin-voz", action="store_true", help="no descargar la voz del narrador")
     p.set_defaults(func=cmd_descargar)
 
     p = sub.add_parser("snapshot", help="captura del directo para calibrar la cámara")
