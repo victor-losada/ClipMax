@@ -277,6 +277,33 @@ def zoom_filter(src: str, dst: str, at: float, size: tuple[int, int], fps: int,
             f":d=1:s={w}x{h}:fps={fps},setpts=N/({fps}*TB),setsar=1[{dst}]")
 
 
+def zoom_windows_filter(src: str, dst: str, windows: list, size: tuple[int, int], fps: int) -> str:
+    """Varios zooms en un tramo (punch-ins, textos, remate), cada uno anclado a su punto.
+
+    Con x = (iw - iw/zoom) * ancla, el punto `ancla` (0-1) queda fijo en pantalla: anclado en la
+    esquina de la cámara la cara crece sin salirse; anclado en un texto, el texto se centra.
+    Entre ventanas no hay zoom (factor 1). Mismas precauciones de fps/setpts que zoom_filter.
+    """
+    w, h = size
+    terms = []
+    for z in windows:
+        if z.kind == "final":
+            env = f"clip((it-{z.t0:.3f})/{max(0.1, z.t1 - 1.0 - z.t0):.3f},0,1)"
+        elif z.kind == "fijo":
+            env = f"between(it,{z.t0:.3f},{z.t1:.3f})"
+        else:
+            env = (f"clip((it-{z.t0:.3f})/{max(0.01, z.ramp_in):.3f},0,1)"
+                   f"*clip(({z.t1:.3f}-it)/{max(0.01, z.ramp_out):.3f},0,1)")
+        terms.append(f"{z.factor - 1:.3f}*{env}")
+    zexpr = "1+" + "+".join(terms) if terms else "1"
+    ax, ay = "0.5", "0.5"
+    for z in reversed(windows):
+        ax = f"if(between(it,{z.t0:.3f},{z.t1:.3f}),{z.ax:.4f},{ax})"
+        ay = f"if(between(it,{z.t0:.3f},{z.t1:.3f}),{z.ay:.4f},{ay})"
+    return (f"[{src}]fps={fps},zoompan=z='{zexpr}':x='(iw-iw/zoom)*({ax})':y='(ih-ih/zoom)*({ay})'"
+            f":d=1:s={w}x{h}:fps={fps},setpts=N/({fps}*TB),setsar=1[{dst}]")
+
+
 def auto_moment(db, session_id: int, slug: str, wall0: float, dur: float) -> float | None:
     """Si Claude no marcó el remate: pico de chat del tramo (menos ~6 s de reacción del chat)."""
     rows = db.query(

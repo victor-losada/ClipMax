@@ -14,7 +14,7 @@ Cada minuto, ClipMax mira los mejores momentos que viene detectando (picos de ch
 
 1. Lo transcribe con whisper (subtítulos palabra por palabra).
 2. Claude decide si sirve como clip suelto y, si sirve, dónde cortarlo (15–60 s), qué título poner en pantalla, el caption y los hashtags. Usa **Claude Haiku**, unos **$0.005 por clip** (6 por hora durante 8 horas ≈ $0.25 al día). Si no hay API, o se acaba el presupuesto del mes, usa reglas automáticas: corta alrededor del pico del chat y toma el título de lo que se dijo.
-3. Lo renderiza en vertical con subtítulos dinámicos, zoom suave en el remate y, a veces, un efecto de sonido.
+3. Lo renderiza en vertical con subtítulos dinámicos y los efectos del director ([ESTILO_EDICION.md](ESTILO_EDICION.md)): zoom al texto que provoca la reacción (el mensaje del chat, el aviso del juego), punch-in a la cara en las emociones y la cara a pantalla completa en la reacción más fuerte.
 
 En el Panel, cada clip tiene su miniatura y los botones **Descargar**, **Copiar caption** (con hashtags) y **subido**. "Subido" es una marca para que sepas cuáles ya publicaste.
 

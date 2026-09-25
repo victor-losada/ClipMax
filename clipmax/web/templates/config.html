@@ -126,7 +126,8 @@ function fill() {
 function addRow(s) {
   s = s || { nombre: "", url: "https://kick.com/", modo: "juego_cara", activo: true, prioridad: 1, alias: [], transcribir_en_vivo: false, camara: null, slug: "" };
   const tr = document.createElement("tr");
-  tr.dataset.extra = JSON.stringify({ camara: s.camara, chatroom_id: s.chatroom_id ?? null });
+  tr.dataset.extra = JSON.stringify({ camara: s.camara, zona_chat: s.zona_chat ?? null, color: s.color || "",
+                                      chatroom_id: s.chatroom_id ?? null });
   tr.innerHTML = `<td><input type="checkbox" class="f-activo" ${s.activo ? "checked" : ""}></td>
     <td><input class="f-nombre" value="${esc(s.nombre)}" style="width:130px" onchange="pairOptions()"></td>
     <td><input class="f-url" value="${esc(s.url)}" style="width:210px" onchange="pairOptions()"></td>
@@ -134,7 +135,7 @@ function addRow(s) {
     <td><input class="f-prio" type="number" step="0.1" min="0.1" value="${s.prioridad}" style="width:70px"></td>
     <td><input class="f-alias" value="${esc((s.alias || []).join(", "))}" style="width:180px"></td>
     <td><input type="checkbox" class="f-vivo" ${s.transcribir_en_vivo ? "checked" : ""}></td>
-    <td>${s.slug ? `<a href="/camara/${esc(s.slug)}">${s.camara ? "✔ ajustar" : "definir"}</a>` : '<span class="mut small">guarda primero</span>'}</td>
+    <td>${s.slug ? `<a href="/camara/${esc(s.slug)}">${s.camara ? "✔ cámara" : "definir cámara"}${s.zona_chat ? " · ✔ chat" : ""}</a>` : '<span class="mut small">guarda primero</span>'}</td>
     <td><button class="sec" onclick="this.closest('tr').remove(); pairOptions()">✕</button></td>`;
   tr.querySelector(".f-modo").value = s.modo;
   $("tbl").appendChild(tr);

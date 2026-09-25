@@ -32,24 +32,7 @@ Descarta el gameplay sin conversación (minar, construir, farmear), la lectura d
 - La suma de los clips debe quedar entre {{duracion_min}} y {{duracion_max}} minutos. Si el material bueno no alcanza el mínimo, entrega un video más corto antes que rellenar con gameplay, y explícalo en `notas_editor`.
 - Dale a cada clip una `prioridad` de 1 a 5 (5 = imprescindible). Si el video se pasa del máximo, el editor quita primero los de prioridad baja. Los silencios largos dentro de cada clip se recortan automáticamente.
 
-## Guion
-
-Escribe el resumen como la historia del día, no como una lista de clips:
-
-- Abre con un gancho: una línea de narración que prometa el mejor momento, o directamente el clip más fuerte.
-- Agrupa por arcos (el pique principal, las alianzas, el caos del día) y respeta el orden cronológico dentro de cada arco.
-- Entre clips, narración de 1 a 3 frases cortas (unas 35 palabras como máximo), con tono de narrador de lore y algo de humor, en español neutro con toques colombianos. Explica lo mínimo necesario para entender el siguiente clip.
-- Cierra con un cliffhanger o una pregunta para mañana.
-- El chipeo se muestra tal cual, pero la narración no suma insultos, ataques personales ni burlas por lo que alguien es. No inventes datos (puntos, muertes, premios, eliminaciones) que no estén en el material.
-- `titulo_en_pantalla`: frase corta en mayúsculas (unas 6 palabras) que se superpone al inicio del clip.
-
-## Efectos (con criterio)
-
-El video lleva subtítulos dinámicos automáticos. Además, en cada clip puedes marcar:
-
-- `momento_clave`: el segundo exacto del remate (la frase que pega, la reacción), en el mismo reloj que `inicio`/`fin` y dentro de ese rango. Ahí entra un zoom suave. Usa 0 si el clip no tiene un remate claro.
-- `efecto_sonido`: suena en el `momento_clave`. Disponibles: {{efectos}}. Úsalo solo cuando sume: un golpe en la humillación, una campana cuando alguien suelta algo que no debía. Como máximo {{max_efectos}} en todo el video; lo normal es menos. Deja "" en el resto.
-- `pantalla_dividida_con`: si el candidato tiene "Mismo suceso que: candidato N", puedes poner ese N para mostrar a los dos streamers a la par (se escucha solo el audio del clip principal). Úsalo cuando ver la cara del otro al mismo tiempo sea el chiste, por ejemplo en el chipeo en vivo. Usa 0 en los demás.
+{{guia_estilo}}
 
 ## Documento de mejores momentos
 
@@ -71,12 +54,21 @@ Responde únicamente con un objeto JSON con esta forma (sin texto antes ni despu
   "resumen_del_dia": "string, 2 a 4 párrafos",
   "lore_para_manana": "string, 3 a 6 líneas",
   "guion": [
+    {"tipo": "gancho", "texto": "", "candidato_id": 12, "inicio": 41.6, "fin": 43.2,
+     "titulo_en_pantalla": "", "prioridad": 5, "motivo": "", "momento_clave": 0, "efecto_sonido": "",
+     "pantalla_dividida_con": 0, "bloque": "gancho", "emociones": [], "zoom_texto": [], "facecam_completo": [],
+     "rotulo": "", "conservar_silencios": false, "zoom_final": false, "repeticiones": 3},
     {"tipo": "narracion", "texto": "string", "candidato_id": 0, "inicio": 0, "fin": 0,
-     "titulo_en_pantalla": "", "prioridad": 5, "motivo": "",
-     "momento_clave": 0, "efecto_sonido": "", "pantalla_dividida_con": 0},
+     "titulo_en_pantalla": "", "prioridad": 5, "motivo": "", "momento_clave": 0, "efecto_sonido": "",
+     "pantalla_dividida_con": 0, "bloque": "premisa", "emociones": [], "zoom_texto": [], "facecam_completo": [],
+     "rotulo": "", "conservar_silencios": false, "zoom_final": false, "repeticiones": 0},
     {"tipo": "clip", "texto": "", "candidato_id": 12, "inicio": 8.5, "fin": 61.0,
-     "titulo_en_pantalla": "GEAR RESPONDE", "prioridad": 5, "motivo": "por qué entra este corte",
-     "momento_clave": 42.3, "efecto_sonido": "boom", "pantalla_dividida_con": 15}
+     "titulo_en_pantalla": "", "prioridad": 5, "motivo": "por qué entra este corte",
+     "momento_clave": 42.3, "efecto_sonido": "", "pantalla_dividida_con": 0, "bloque": "cuerpo",
+     "emociones": [{"t": 42.3, "tipo": "rabia", "texto": "ME ROBÓ"}],
+     "zoom_texto": [{"t": 38.0, "zona": "chat", "texto": "el mensaje que lo hizo reaccionar"}],
+     "facecam_completo": [{"inicio": 42.0, "fin": 47.0}], "rotulo": "", "conservar_silencios": false,
+     "zoom_final": false, "repeticiones": 0}
   ],
   "mejores_momentos": [
     {"candidato_id": 12, "inicio": 8.5, "fin": 61.0, "titulo": "string", "por_que_importa": "string",
@@ -91,4 +83,4 @@ Responde únicamente con un objeto JSON con esta forma (sin texto antes ni despu
 }
 ```
 
-En los elementos de tipo `narracion`, `candidato_id`, `inicio`, `fin`, `momento_clave` y `pantalla_dividida_con` van en 0 y `efecto_sonido` vacío. En los de tipo `clip`, `texto` va vacío.
+En los elementos de tipo `narracion`, `candidato_id`, `inicio`, `fin`, `momento_clave`, `pantalla_dividida_con` y `repeticiones` van en 0, `efecto_sonido` vacío y las listas vacías. En los de tipo `clip` y `gancho`, `texto` va vacío. Todos los tiempos (`inicio`, `fin`, `momento_clave`, `t` de `emociones` y `zoom_texto`, y los de `facecam_completo`) usan el reloj del candidato.

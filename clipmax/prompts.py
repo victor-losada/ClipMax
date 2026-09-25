@@ -28,7 +28,7 @@ MASTER_PROMPT_PATH = PROJECT_ROOT / "prompts" / "prompt_maestro.md"
 _GUION_ITEM = {
     "type": "object",
     "properties": {
-        "tipo": {"type": "string", "enum": ["narracion", "clip"]},
+        "tipo": {"type": "string", "enum": ["narracion", "clip", "gancho"]},
         "texto": {"type": "string"},
         "candidato_id": {"type": "integer"},
         "inicio": {"type": "number"},
@@ -39,9 +39,31 @@ _GUION_ITEM = {
         "momento_clave": {"type": "number"},
         "efecto_sonido": {"type": "string"},
         "pantalla_dividida_con": {"type": "integer"},
+        # Estilo Eufonía (prompts/estilo_eufonia.md); en el clásico van vacíos salvo emociones/zoom_texto.
+        "bloque": {"type": "string", "enum": ["", "gancho", "premisa", "cuerpo", "subida", "pausa", "climax",
+                                              "desenlace", "cierre"]},
+        "emociones": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"t": {"type": "number"}, "tipo": {"type": "string"}, "texto": {"type": "string"}},
+            "required": ["t", "tipo", "texto"], "additionalProperties": False}},
+        "zoom_texto": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"t": {"type": "number"},
+                           "zona": {"type": "string", "enum": ["chat", "juego", "centro", "arriba"]},
+                           "texto": {"type": "string"}},
+            "required": ["t", "zona", "texto"], "additionalProperties": False}},
+        "facecam_completo": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"inicio": {"type": "number"}, "fin": {"type": "number"}},
+            "required": ["inicio", "fin"], "additionalProperties": False}},
+        "rotulo": {"type": "string"},
+        "conservar_silencios": {"type": "boolean"},
+        "zoom_final": {"type": "boolean"},
+        "repeticiones": {"type": "integer"},
     },
     "required": ["tipo", "texto", "candidato_id", "inicio", "fin", "titulo_en_pantalla", "prioridad", "motivo",
-                 "momento_clave", "efecto_sonido", "pantalla_dividida_con"],
+                 "momento_clave", "efecto_sonido", "pantalla_dividida_con", "bloque", "emociones", "zoom_texto",
+                 "facecam_completo", "rotulo", "conservar_silencios", "zoom_final", "repeticiones"],
     "additionalProperties": False,
 }
 _MOMENTO = {
@@ -108,6 +130,9 @@ def _hashtag(evento: str) -> str:
 
 def master_prompt(cfg: dict) -> str:
     text = MASTER_PROMPT_PATH.read_text(encoding="utf-8")
+    estilo = cfg["edicion"].get("estilo", "eufonia")
+    guide = PROJECT_ROOT / "prompts" / f"estilo_{estilo}.md"
+    text = text.replace("{{guia_estilo}}", guide.read_text(encoding="utf-8").strip() if guide.exists() else "")
     pair = pair_slugs(cfg) + ["", ""]
     values = {
         "evento": cfg["evento"]["nombre"],
@@ -132,7 +157,7 @@ CLIP_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["publicar", "motivo", "inicio", "fin", "momento_clave", "titulo", "caption", "hashtags",
-                 "efecto_sonido"],
+                 "efecto_sonido", "emociones", "zoom_texto"],
     "properties": {
         "publicar": {"type": "boolean"},
         "motivo": {"type": "string"},
@@ -143,6 +168,16 @@ CLIP_SCHEMA = {
         "caption": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}},
         "efecto_sonido": {"type": "string"},
+        "emociones": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"t": {"type": "number"}, "tipo": {"type": "string"}, "texto": {"type": "string"}},
+            "required": ["t", "tipo", "texto"], "additionalProperties": False}},
+        "zoom_texto": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"t": {"type": "number"},
+                           "zona": {"type": "string", "enum": ["chat", "juego", "centro", "arriba"]},
+                           "texto": {"type": "string"}},
+            "required": ["t", "zona", "texto"], "additionalProperties": False}},
     },
 }
 

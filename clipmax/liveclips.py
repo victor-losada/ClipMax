@@ -20,7 +20,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import brain, editor, effects, tools, xcontext
+from . import brain, editor, effects, style, tools, xcontext
 from .cards import render_lower_third
 from .config import pair_slugs, session_dir, streamer_name
 from .db import Database
@@ -98,6 +98,9 @@ def normalize_decision(cfg: dict, raw: dict, cand: dict) -> dict:
         "caption": str(raw.get("caption") or "").strip()[:220],
         "hashtags": hashtag_list(cfg, raw.get("hashtags"), cand["slug"]),
         "efecto_sonido": sfx if sfx in effects.sfx_names(cfg) else "",
+        "emociones": [e for e in raw.get("emociones") or [] if isinstance(e, dict) and 0 <= _num(e.get("t"), -1) <= dur],
+        "zoom_texto": [z for z in raw.get("zoom_texto") or [] if isinstance(z, dict)
+                       and 0 <= _num(z.get("t"), -1) <= dur],
     }
 
 
@@ -314,6 +317,10 @@ class LiveClipper(threading.Thread):
         if spec.momento is None and cfg["edicion"].get("zoom_auto"):
             spec.momento = effects.auto_moment(db, sid, slug, spec.wall0, spec.dur)
         spec.efecto = decision["efecto_sonido"]
+        # Punch-ins a la cara en las emociones y zoom al texto que las provoca (style.py).
+        style.direct(cfg, db, session, spec, cand,
+                     {"momento_clave": key or 0, "emociones": decision.get("emociones", []),
+                      "zoom_texto": decision.get("zoom_texto", [])}, VERTICAL)
         folder = clips_dir(cfg, session["fecha"])
         stem = f"{cid:03d}_{fmt_clock(wall0, cfg, seconds=False).replace(':', '')}_{slug}_{editor.slugify(decision['titulo'], 30)}"
         out = folder / f"{stem}.mp4"

@@ -126,6 +126,10 @@ DEFAULTS: dict[str, Any] = {
         "precio_busqueda_web_usd": 0.01,
     },
     "edicion": {
+        # "eufonia": montaje con las voces al frente, captions de frases clave, punch-ins al facecam,
+        # zoom a los textos que provocan reacciones y estructura por bloques (docs/ESTILO_EDICION.md).
+        # "clasico": tarjetas de narración entre clips y subtítulos continuos.
+        "estilo": "eufonia",
         "formato": "horizontal",   # "horizontal" (1920x1080) o "vertical" (1080x1920)
         "ancho": 1920,
         "alto": 1080,
@@ -207,6 +211,21 @@ def slug_from_url(url: str) -> str:
     raise ConfigError(f"URL de Kick inválida: {url!r}")
 
 
+def _box(box, name: str) -> dict | None:
+    """Recuadro {x, y, w, h} en fracciones 0-1 de la imagen, o None."""
+    if not box:
+        return None
+    try:
+        box = {k: float(box[k]) for k in ("x", "y", "w", "h")}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ConfigError(f"{name} necesita x, y, w, h (fracciones 0-1)") from exc
+    if not all(0 <= box[k] <= 1 for k in box) or box["w"] <= 0 or box["h"] <= 0:
+        raise ConfigError(f"{name}: valores fuera de rango 0-1")
+    box["w"] = min(box["w"], 1 - box["x"])
+    box["h"] = min(box["h"], 1 - box["y"])
+    return box
+
+
 def _normalize_streamer(raw: dict, index: int) -> dict:
     if not isinstance(raw, dict):
         raise ConfigError(f"streamers[{index}] debe ser un objeto")
@@ -220,9 +239,11 @@ def _normalize_streamer(raw: dict, index: int) -> dict:
         "alias": [],
         "transcribir_en_vivo": False,
         "camara": None,
+        "zona_chat": None,     # recuadro del chat que el streamer muestra en pantalla (zoom a textos)
+        "color": "",           # color de sus captions (#RRGGBB); vacío = uno de la paleta
         "chatroom_id": None,
     }
-    s.update({k: v for k, v in raw.items() if v is not None or k in ("camara", "chatroom_id")})
+    s.update({k: v for k, v in raw.items() if v is not None or k in ("camara", "zona_chat", "chatroom_id")})
     if not s["url"] and not s["slug"]:
         raise ConfigError(f"streamers[{index}] necesita 'url'")
     s["slug"] = slug_from_url(s["slug"] or s["url"])
@@ -246,21 +267,12 @@ def _normalize_streamer(raw: dict, index: int) -> dict:
     # El nombre y el slug siempre cuentan como alias.
     base = [s["nombre"], s["slug"]]
     s["alias"] = sorted({a.strip() for a in [*alias, *base] if a and a.strip()}, key=str.lower)
-    cam = s.get("camara")
-    if cam:
-        try:
-            cam = {k: float(cam[k]) for k in ("x", "y", "w", "h")}
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ConfigError(
-                f"streamers[{index}].camara necesita x, y, w, h (fracciones 0-1)"
-            ) from exc
-        if not all(0 <= cam[k] <= 1 for k in cam) or cam["w"] <= 0 or cam["h"] <= 0:
-            raise ConfigError(f"streamers[{index}].camara: valores fuera de rango 0-1")
-        cam["w"] = min(cam["w"], 1 - cam["x"])
-        cam["h"] = min(cam["h"], 1 - cam["y"])
-        s["camara"] = cam
-    else:
-        s["camara"] = None
+    s["camara"] = _box(s.get("camara"), f"streamers[{index}].camara")
+    s["zona_chat"] = _box(s.get("zona_chat"), f"streamers[{index}].zona_chat")
+    color = str(s.get("color") or "").strip()
+    if color and not re.fullmatch(r"#?[0-9A-Fa-f]{6}", color):
+        raise ConfigError(f"streamers[{index}].color debe ser #RRGGBB (ej. #FFD400)")
+    s["color"] = ("#" + color.lstrip("#").upper()) if color else ""
     if s.get("chatroom_id") not in (None, ""):
         s["chatroom_id"] = int(s["chatroom_id"])
     else:
@@ -306,6 +318,9 @@ def validate(cfg: dict) -> dict:
     if cfg["x"]["modo"] not in ("manual", "api", "claude_web"):
         raise ConfigError("x.modo debe ser 'manual', 'api' o 'claude_web'")
     ed = cfg["edicion"]
+    if ed.get("estilo", "eufonia") not in ("eufonia", "clasico"):
+        raise ConfigError("edicion.estilo debe ser 'eufonia' o 'clasico'")
+    ed["estilo"] = ed.get("estilo") or "eufonia"
     if ed["formato"] not in ("horizontal", "vertical"):
         raise ConfigError("edicion.formato debe ser 'horizontal' o 'vertical'")
     if ed["narracion"] not in ("tarjetas", "sapi", "piper"):

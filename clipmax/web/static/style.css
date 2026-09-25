@@ -42,3 +42,4 @@ summary { cursor: pointer; } .tr { font-size: 13px; color: #cfd3d8; margin: 2px 
 .card.clip img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 8px; margin-bottom: 6px; background: #000; }
 .card.clip.subido { opacity: .55; }
 .card.clip .caption { white-space: pre-wrap; margin-top: 4px; max-height: 7.5em; overflow: auto; }
+.cropbox.chat { border-color: #ff4fa3 !important; }

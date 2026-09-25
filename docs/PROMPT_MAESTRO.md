@@ -1,6 +1,6 @@
 # Prompt maestro: cómo usarlo cada día
 
-El prompt vive en **`prompts/prompt_maestro.md`** y es la fuente única:
+El prompt vive en **`prompts/prompt_maestro.md`** y es la fuente única. La guía de estilo se inserta según `edicion.estilo`: **`prompts/estilo_eufonia.md`** (por defecto: bloques, gancho, emociones, zoom a textos, rótulos, máximo 3 narraciones) o **`prompts/estilo_clasico.md`** (narración entre clips).
 
 - En **modo API**, ClipMax lo envía como *system prompt* y le suma el material del día como mensaje. La respuesta llega como JSON validado contra un esquema.
 - En **modo manual**, lo pegas tú en claude.ai (costo de API $0, lo cubre tu plan).

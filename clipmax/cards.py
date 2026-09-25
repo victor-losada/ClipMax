@@ -175,3 +175,139 @@ def render_split_tags(main: str, partner: str, size: tuple[int, int], out_png: P
     out_png.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_png)
     return out_png
+
+
+# ---------------------------------------------------------------------------
+# Estilo "Eufonía": fuente pixel para rótulos, sting y pantalla final; redondeada para narración
+# ---------------------------------------------------------------------------
+_SIN_TILDE = str.maketrans("ÁÉÍÓÚÜáéíóúü", "AEIOUUaeiouu")
+
+
+def _pixel_text(text: str) -> str:
+    """La fuente pixel no trae vocales con tilde en mayúscula: se quitan las tildes."""
+    return _strip_unrenderable(text).translate(_SIN_TILDE).upper()
+
+
+def _style_fonts() -> tuple[str, str]:
+    from .style import CAPTION_FONT, PIXEL_FONT
+
+    return str(PIXEL_FONT) if PIXEL_FONT.exists() else "", str(CAPTION_FONT) if CAPTION_FONT.exists() else ""
+
+
+def _gradient_text(img: Image.Image, xy: tuple[int, int], text: str, font, top: tuple[int, int, int],
+                   bottom: tuple[int, int, int], stroke: int) -> None:
+    """Texto con relleno degradado vertical y contorno oscuro (pixel art de la pantalla final)."""
+    draw = ImageDraw.Draw(img)
+    draw.text(xy, text, font=font, fill=(0, 0, 0, 255), stroke_width=stroke, stroke_fill=(0, 0, 0, 255))
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).text(xy, text, font=font, fill=255)
+    x0, y0, x1, y1 = mask.getbbox() or (0, 0, img.width, img.height)
+    grad = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grad)
+    for y in range(y0, y1 + 1):
+        k = (y - y0) / max(1, y1 - y0)
+        gd.line([(x0, y), (x1, y)], fill=(*[int(top[i] + (bottom[i] - top[i]) * k) for i in range(3)], 255))
+    img.paste(grad, (0, 0), mask)
+
+
+def _fit_font(draw: ImageDraw.ImageDraw, text: str, path: str, size_px: int, max_width: int):
+    font = _font(path, size_px)
+    while draw.textlength(text, font=font) > max_width and size_px > 10:
+        size_px = int(size_px * 0.9)
+        font = _font(path, size_px)
+    return font
+
+
+def render_pixel_label(text: str, size: tuple[int, int], out_png: Path) -> Path:
+    """Rótulo de desenlace: "ETIQUETA · NOMBRE" en pixel blanco con contorno, abajo a la derecha."""
+    pixel, _round = _style_fonts()
+    w, h = size
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    text = _pixel_text(text)
+    font = _fit_font(draw, text, pixel, int(min(w, h) * 0.034), int(w * 0.6))
+    tw = draw.textlength(text, font=font)
+    x, y = int(w - tw - w * 0.04), int(h * 0.86)
+    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255), stroke_width=max(3, font.size // 6),
+              stroke_fill=(0, 0, 0, 255))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_png)
+    return out_png
+
+
+def render_sting_title(title: str, subtitle: str, size: tuple[int, int], out_png: Path) -> Path:
+    """Título del sting (después del gancho): pixel grande con degradado, centrado, fondo transparente."""
+    pixel, _round = _style_fonts()
+    w, h = size
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    title = _pixel_text(title)
+    font = _fit_font(draw, title, pixel, int(min(w, h) * 0.085), int(w * 0.86))
+    tw = draw.textlength(title, font=font)
+    y = int(h * 0.42)
+    _gradient_text(img, (int((w - tw) / 2), y), title, font, (255, 236, 64), (255, 120, 20), max(4, font.size // 7))
+    if subtitle:
+        sub = _pixel_text(subtitle)
+        sf = _fit_font(draw, sub, pixel, int(min(w, h) * 0.03), int(w * 0.8))
+        sw = draw.textlength(sub, font=sf)
+        draw.text((int((w - sw) / 2), y + int(font.size * 1.6)), sub, font=sf, fill=(255, 255, 255, 255),
+                  stroke_width=max(2, sf.size // 6), stroke_fill=(0, 0, 0, 255))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_png)
+    return out_png
+
+
+def render_end_card(text: str, subtitle: str, size: tuple[int, int], out_png: Path,
+                    bg_image: Path | None = None) -> Path:
+    """Pantalla final: fondo (último plano desenfocado) + texto pixel con degradado."""
+    pixel, _round = _style_fonts()
+    w, h = size
+    img = _background(size, bg_image).convert("RGBA")
+    draw = ImageDraw.Draw(img)
+    text = _pixel_text(text)
+    font = _fit_font(draw, text, pixel, int(min(w, h) * 0.1), int(w * 0.88))
+    tw = draw.textlength(text, font=font)
+    y = int(h * 0.40)
+    _gradient_text(img, (int((w - tw) / 2), y), text, font, (120, 255, 90), (20, 170, 255), max(5, font.size // 7))
+    if subtitle:
+        sub = _pixel_text(subtitle)
+        sf = _fit_font(draw, sub, pixel, int(min(w, h) * 0.032), int(w * 0.8))
+        sw = draw.textlength(sub, font=sf)
+        draw.text((int((w - sw) / 2), y + int(font.size * 1.7)), sub, font=sf, fill=(255, 255, 255, 255),
+                  stroke_width=max(2, sf.size // 6), stroke_fill=(0, 0, 0, 255))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    img.convert("RGB").save(out_png)
+    return out_png
+
+
+def render_card_eufonia(text: str, size: tuple[int, int], out_png: Path, *, bg_image: Path | None = None,
+                        label: str = "") -> Path:
+    """Tarjeta de narración del estilo nuevo: texto en fuente redondeada con contorno y la etiqueta en pixel."""
+    pixel, rounded = _style_fonts()
+    w, h = size
+    img = _background(size, bg_image).convert("RGBA")
+    draw = ImageDraw.Draw(img)
+    base = min(w, h)
+    text = _strip_unrenderable(text)
+    size_px = int(base * 0.07)
+    font = _font(rounded, size_px)
+    lines = _wrap(draw, text, font, int(w * 0.8))
+    while len(lines) * size_px * 1.25 > h * 0.66 and size_px > 18:
+        size_px = int(size_px * 0.9)
+        font = _font(rounded, size_px)
+        lines = _wrap(draw, text, font, int(w * 0.8))
+    line_h = int(size_px * 1.25)
+    y = (h - line_h * len(lines)) // 2
+    for line in lines:
+        tw = draw.textlength(line, font=font)
+        draw.text(((w - tw) // 2, y), line, font=font, fill=(255, 255, 255, 255),
+                  stroke_width=max(3, size_px // 10), stroke_fill=(0, 0, 0, 255))
+        y += line_h
+    if label:
+        lbl = _pixel_text(label)
+        lf = _fit_font(draw, lbl, pixel, int(base * 0.026), int(w * 0.5))
+        draw.text((int(base * 0.04), int(base * 0.04)), lbl, font=lf, fill=(255, 214, 0, 255),
+                  stroke_width=max(2, lf.size // 6), stroke_fill=(0, 0, 0, 255))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    img.convert("RGB").save(out_png)
+    return out_png

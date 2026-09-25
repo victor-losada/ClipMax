@@ -22,7 +22,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import effects, tools
+from . import effects, style, tools
 from .cards import render_card, render_lower_third, render_split_tags
 from .config import get_streamer, session_dir, streamer_name
 from .db import Database
@@ -47,6 +47,12 @@ class ClipSpec:
     efecto: str = ""                 # efecto de sonido en el remate
     whoosh: bool = False             # efecto de transición al entrar (viene de una tarjeta)
     partner: "ClipSpec | None" = None  # otro streamer a la par (pantalla dividida)
+    # Estilo "Eufonía" (clipmax/style.py): plan de zooms/cara/captions, bloque y audio del tramo.
+    plan: object | None = None
+    bloque: str = ""
+    title_hold: float | None = None  # segundos que se queda el PNG de título/rótulo (None = 5 s con fundido)
+    loud_target: float | None = None  # LUFS del tramo según el bloque (None = -16 clásico)
+    audio_gain: float = 1.0           # <1 baja la voz (sting)
 
     @property
     def kept_duration(self) -> float:
@@ -227,8 +233,11 @@ def _src_size(path: str) -> tuple[int, int]:
 
 
 def prepare_clip(cfg: dict, db: Database, session: dict, cand: dict, inicio: float, fin: float,
-                 titulo: str = "") -> ClipSpec | None:
-    """Ubica el tramo en disco y calcula qué partes conservar (sin silencios largos)."""
+                 titulo: str = "", *, max_gap: float | None = None, keep_all: bool = False) -> ClipSpec | None:
+    """Ubica el tramo en disco y calcula qué partes conservar (sin silencios largos).
+
+    max_gap: silencio máximo (por defecto edicion.silencio_max_s); keep_all: no recortar nada
+    (pausas dramáticas, el gancho)."""
     inicio, fin = snap_to_segments(inicio, fin, cand.get("transcripcion", []), cand["duracion"])
     t0, t1 = cand["start_ts"] + inicio, cand["start_ts"] + fin
     loc = locate_range(db, session["id"], cand["slug"], t0, t1, float(cfg["grabacion"]["desfase_chat_s"]))
@@ -239,8 +248,8 @@ def prepare_clip(cfg: dict, db: Database, session: dict, cand: dict, inicio: flo
     spec = ClipSpec(slug=cand["slug"], nombre=streamer_name(cfg, cand["slug"]), path=path,
                     file_start=start, dur=dur, wall0=wall0, titulo=titulo)
     ed = cfg["edicion"]
-    method = ed["metodo_silencios"]
-    max_gap = float(ed["silencio_max_s"])
+    method = "ninguno" if keep_all else ed["metodo_silencios"]
+    max_gap = float(ed["silencio_max_s"]) if max_gap is None else max_gap
     segs = db.segments(session["id"], cand["slug"], wall0, wall0 + dur)
     spec.words = effects.segment_words(segs, wall0, dur)
     if method == "transcripcion":
@@ -383,18 +392,45 @@ def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int]
         parts.append(split_layout("vc", "vcp", "vl", (_src_size(spec.path), streamer),
                                   (_src_size(partner.path), pst), out_size))
     else:
-        parts.append(layout_filter("vc", "vl", _src_size(spec.path), out_size, modo, streamer.get("camara")))
+        plan = spec.plan if effects_on else None
+        src = "vc"
+        if plan is not None and plan.facecam and plan.facecam_px:
+            # La cara a pantalla completa sale de la imagen original (rama aparte, antes del encuadre).
+            parts.append("[vc]split=2[vcl][vcf]")
+            src = "vcl"
+            cw, ch, cx, cy = plan.facecam_px
+            w_out, h_out = out_size
+            ratio = (cw / ch) / (w_out / h_out)
+            if 1 / 1.35 <= ratio <= 1.35:   # proporción parecida: llena el cuadro
+                parts.append(f"[vcf]crop={cw}:{ch}:{cx}:{cy},scale={w_out}:{h_out}:force_original_aspect_ratio="
+                             f"increase,crop={w_out}:{h_out},setsar=1[vfcs]")
+            else:                           # muy distinta: la cámara entera con fondo desenfocado
+                parts.append(f"[vcf]crop={cw}:{ch}:{cx}:{cy}[vfcc]")
+                parts.append(fit_blur("vfcc", "vfcs", cw, ch, w_out, h_out, "fcb"))
+        parts.append(layout_filter(src, "vl", _src_size(spec.path), out_size, modo, streamer.get("camara")))
     cur = "vl"
 
     moment = _remap_near(spec.momento, keep) if effects_on else None
-    if moment is not None and ed.get("zoom") and not partner:
+    plan = spec.plan if (effects_on and not partner) else None
+    if plan is not None:
+        # Plan del director (style.py): cara a pantalla completa, zoom a textos y punch-ins al facecam.
+        if plan.facecam and plan.facecam_px:
+            enable = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in plan.facecam)
+            parts.append(f"[{cur}][vfcs]overlay=0:0:enable='{enable}'[vfc]")
+            cur = "vfc"
+        if plan.zooms and ed.get("zoom", True):
+            parts.append(effects.zoom_windows_filter(cur, "vz", plan.zooms, out_size, fps))
+            cur = "vz"
+    elif moment is not None and ed.get("zoom") and not partner:
         parts.append(effects.zoom_filter(cur, "vz", moment, out_size, fps, float(ed.get("zoom_factor", 1.12))))
         cur = "vz"
     if title_png:
-        title_dur = min(5.0, kept)
+        hold = spec.title_hold
+        title_dur = min(hold if hold else 5.0, kept)
         it = add_input(["-loop", "1", "-framerate", str(fps), "-t", f"{title_dur:.2f}", "-i", str(title_png)])
-        parts.append(f"[{it}:v]format=rgba,fade=t=in:st=0.2:d=0.3:alpha=1,"
-                     f"fade=t=out:st={max(0.5, title_dur - 0.5):.2f}:d=0.4:alpha=1[ttl]")
+        fade_out = "" if hold and hold >= kept else \
+            f",fade=t=out:st={max(0.5, title_dur - 0.5):.2f}:d=0.4:alpha=1"
+        parts.append(f"[{it}:v]format=rgba,fade=t=in:st=0.2:d=0.3:alpha=1{fade_out}[ttl]")
         parts.append(f"[{cur}][ttl]overlay=0:0:eof_action=pass[vt]")
         cur = "vt"
     if partner and work:
@@ -404,14 +440,26 @@ def _render_clip(cfg: dict, spec: ClipSpec, out: Path, out_size: tuple[int, int]
         parts.append(f"[{cur}][{itg}:v]overlay=0:0:eof_action=pass[vtag]")
         cur = "vtag"
     cwd = None
-    if effects_on and ed.get("subtitulos") and work:
+    if effects_on and work and plan is not None and plan.captions is not None:
+        # Estilo Eufonía: captions de frases clave (1-4 palabras, color del streamer).
+        from . import style
+
+        sub = style.write_key_captions(plan, out_size, work, out.stem)
+        if sub:
+            parts.append(f"[{cur}]subtitles=f={sub[0]}:fontsdir={sub[1]}[vsub]")
+            cur, cwd = "vsub", work
+    elif effects_on and ed.get("subtitulos") and work:
         sub = effects.write_subtitles(cfg, effects.remap_words(spec.words, keep), out_size, work, out.stem)
         if sub:
             parts.append(f"[{cur}]subtitles=f={sub[0]}:fontsdir={sub[1]}[vsub]")
             cur, cwd = "vsub", work
     parts.append(f"[{cur}]fps={fps},format=yuv420p[vout]")
 
-    parts.append("[ac]aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,"
+    # Volumen: -16 LUFS parejo (clásico) o el del bloque con más rango (Eufonía: la energía crece).
+    target = spec.loud_target if spec.loud_target is not None else -16.0
+    lra = 15 if spec.loud_target is not None else 11
+    gain = f",volume={spec.audio_gain:.3f}" if spec.audio_gain != 1.0 else ""
+    parts.append(f"[ac]aresample=48000,loudnorm=I={target:.1f}:TP=-1.5:LRA={lra},aresample=48000{gain},"
                  "aformat=sample_fmts=fltp:channel_layouts=stereo[asp]")
     events: list[tuple[Path, float, float]] = []
     if effects_on and ed.get("efectos_sonido") and sfx_lib:
@@ -450,14 +498,21 @@ def _reading_time(text: str) -> float:
 
 def render_card_piece(cfg: dict, text: str, out: Path, out_size: tuple[int, int], *,
                       bg: Path | None = None, label: str = "", big: bool = False,
-                      voice: bool = True) -> float:
+                      voice: bool = True, png: Path | None = None, dur: float | None = None,
+                      eufonia: bool = False) -> float:
+    """Pieza fija (tarjeta): la de narración, o un PNG ya hecho (`png`, p. ej. la pantalla final)."""
     w, h = out_size
     fps = int(cfg["edicion"]["fps"])
-    png = out.with_suffix(".png")
-    render_card(text, out_size, png, bg_image=bg, label=label, font_path=cfg["edicion"]["fuente"], big=big)
+    if png is None:
+        png = out.with_suffix(".png")
+        if eufonia:
+            from .cards import render_card_eufonia
+            render_card_eufonia(text, out_size, png, bg_image=bg, label=label)
+        else:
+            render_card(text, out_size, png, bg_image=bg, label=label, font_path=cfg["edicion"]["fuente"], big=big)
     wav = out.with_suffix(".wav")
-    has_voice = voice and synthesize(cfg, text, wav)
-    dur = _reading_time(text)
+    has_voice = voice and bool(text) and synthesize(cfg, text, wav)
+    dur = dur or _reading_time(text)
     if has_voice:
         dur = max(2.5, tools.probe_duration(wav) + 0.7)
     cmd = [tools.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
@@ -541,6 +596,10 @@ def budget_sfx(cfg: dict, specs: list[ClipSpec]) -> None:
 
 def render_summary(cfg: dict, db: Database, session: dict, decision: dict, candidates: list[dict],
                    progress=None) -> Path:
+    if cfg["edicion"].get("estilo", "eufonia") == "eufonia":
+        from .montage import render_summary_eufonia
+
+        return render_summary_eufonia(cfg, db, session, decision, candidates, progress)
     fecha = session["fecha"]
     work = session_dir(cfg, fecha) / "render"
     if work.exists():
@@ -697,8 +756,9 @@ def render_tiktok_summary(cfg: dict, db: Database, session: dict, decision: dict
         if not spec:
             continue
         g = guion.get(int(it["candidato_id"]), {})
-        apply_clip_effects(cfg, db, session, spec, cand,
-                           {**g, "momento_clave": it.get("momento_clave") or 0, "pantalla_dividida_con": 0}, by_id)
+        item = {**g, "momento_clave": it.get("momento_clave") or 0, "pantalla_dividida_con": 0}
+        apply_clip_effects(cfg, db, session, spec, cand, item, by_id)
+        style.direct(cfg, db, session, spec, cand, item, size)   # punch-ins a la cara y zoom a textos
         spec.whoosh = bool(specs)
         specs.append((it, spec))
     budget_sfx(cfg, [sp for _it, sp in specs])
@@ -762,6 +822,7 @@ def export_tiktok_clips(cfg: dict, db: Database, session: dict, decision: dict, 
             continue
         g = guion_by_cand.get(int(m["candidato_id"]), {})
         apply_clip_effects(cfg, db, session, spec, cand, {**g, "pantalla_dividida_con": 0}, by_id)
+        style.direct(cfg, db, session, spec, cand, g, size)
         out = folder / f"{i:02d}_{slugify(m['titulo'] or cand['nombre'])}.mp4"
         title_png = render_lower_third(m["titulo"], spec.nombre, size, folder / f"_t{i:02d}.png",
                                        cfg["edicion"]["fuente"])

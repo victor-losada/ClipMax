@@ -44,7 +44,9 @@ streamers:
     prioridad: 1.5
     alias: [west, wescol, güestcol, westcoll]
     transcribir_en_vivo: true
-    camara: null
+    camara: null              # recuadro de la cara (web: Configuración -> Cámara)
+    zona_chat: null           # recuadro del chat que muestra en pantalla (para el zoom al mensaje)
+    color: ""                 # color de sus captions, ej. "#FFD400" (vacío = paleta automática)
 
   - nombre: "Gear of Nos"
     # ⚠ REEMPLAZA esta URL: "gearofnos" es un marcador y NO existe en Kick. Abre su canal,
@@ -133,6 +135,7 @@ claude:
     claude-haiku-4-5: [1.0, 5.0]
 
 edicion:
+  estilo: "eufonia"           # eufonia (montaje coral, zooms a la cara y a textos; docs/ESTILO_EDICION.md) | clasico
   formato: "horizontal"       # horizontal (YouTube) | vertical (TikTok/Shorts, cámara arriba y juego abajo)
   ancho: 1920
   alto: 1080

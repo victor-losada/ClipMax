@@ -1,9 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Cámara de {{ st.nombre }}{% endblock %}
 {% block content %}
-<h1>Recuadro de cámara · {{ st.nombre }}</h1>
-<p class="mut small">Kick transmite una sola imagen (juego + cámara). Para el modo <b>solo cara</b> y para el formato vertical
-  (cámara arriba, juego abajo), marca con el mouse dónde está la cámara del streamer. Basta hacerlo una vez.</p>
+<h1>Recuadros · {{ st.nombre }}</h1>
+<p class="mut small">Kick transmite una sola imagen (juego + cámara + chat). Marca con el mouse dónde está cada cosa; basta hacerlo una vez.<br>
+  <b>Cámara</b>: para los punch-ins a la cara, la cara a pantalla completa en las reacciones fuertes y el formato vertical (cámara arriba, juego abajo).<br>
+  <b>Chat en pantalla</b>: si el streamer muestra su chat, marca dónde; así el video puede acercarse al mensaje que lo hizo reaccionar.</p>
+<div class="row" style="margin-bottom:10px">
+  <label class="row" style="margin:0"><input type="radio" name="zona" value="camara" checked onchange="cambiarZona(this.value)"> Cámara</label>
+  <label class="row" style="margin:0"><input type="radio" name="zona" value="chat" onchange="cambiarZona(this.value)"> Chat en pantalla</label>
+</div>
 <div class="row" style="margin-bottom:10px">
   <button class="sec" onclick="captura()">Tomar captura (en vivo o de la última grabación)</button>
   <button onclick="guardar()">Guardar recuadro</button>
@@ -17,14 +22,17 @@
 </div>
 <script>
 const SLUG = "{{ st.slug }}";
-let sel = {{ (st.camara or none)|tojson }};
+const BOXES = { camara: {{ (st.camara or none)|tojson }}, chat: {{ (st.zona_chat or none)|tojson }} };
+let ZONA = "camara";
+let sel = BOXES.camara;
+function cambiarZona(z) { BOXES[ZONA] = sel; ZONA = z; sel = BOXES[z]; box.classList.toggle("chat", z === "chat"); draw(); }
 const wrap = document.getElementById("wrap"), box = document.getElementById("box");
 function draw() {
   const img = document.getElementById("img");
   if (!sel || !img || img.tagName !== "IMG") { box.style.display = "none"; return; }
   const w = img.clientWidth, h = img.clientHeight;
   Object.assign(box.style, { display: "block", left: sel.x * w + "px", top: sel.y * h + "px", width: sel.w * w + "px", height: sel.h * h + "px" });
-  document.getElementById("info").textContent = `x=${sel.x.toFixed(3)} y=${sel.y.toFixed(3)} w=${sel.w.toFixed(3)} h=${sel.h.toFixed(3)}`;
+  document.getElementById("info").textContent = `${ZONA === "chat" ? "chat" : "cámara"}: x=${sel.x.toFixed(3)} y=${sel.y.toFixed(3)} w=${sel.w.toFixed(3)} h=${sel.h.toFixed(3)}`;
 }
 let start = null;
 wrap.addEventListener("mousedown", e => {
@@ -46,9 +54,9 @@ async function captura() {
 }
 async function guardar() {
   if (!sel || sel.w < 0.02 || sel.h < 0.02) { toast("Marca primero el recuadro arrastrando sobre la imagen"); return; }
-  try { await api(`/api/camara/${SLUG}`, sel); toast("Recuadro guardado"); } catch (e) { toast(e.message, 6000); }
+  try { await api(`/api/camara/${SLUG}`, { ...sel, zona: ZONA }); BOXES[ZONA] = sel; toast(ZONA === "chat" ? "Zona del chat guardada" : "Recuadro de cámara guardado"); } catch (e) { toast(e.message, 6000); }
 }
-async function borrar() { try { await api(`/api/camara/${SLUG}`, { borrar: true }); sel = null; draw(); toast("Recuadro eliminado"); } catch (e) { toast(e.message); } }
+async function borrar() { try { await api(`/api/camara/${SLUG}`, { borrar: true, zona: ZONA }); sel = null; BOXES[ZONA] = null; draw(); toast("Recuadro eliminado"); } catch (e) { toast(e.message); } }
 draw();
 </script>
 {% endblock %}

@@ -371,6 +371,49 @@ def _num(v, default=0.0) -> float:
         return default
 
 
+BLOQUES = ["gancho", "premisa", "cuerpo", "subida", "pausa", "climax", "desenlace", "cierre"]
+EMOCIONES = ["queja", "susto", "rabia", "risa", "sorpresa", "grito"]
+ZONAS_TEXTO = ["chat", "juego", "centro", "arriba"]
+
+
+def _style_fields(item: dict, a: float, b: float, tipo: str, bloque: str) -> dict:
+    """Campos del estilo Eufonía, validados contra el corte [a, b] (reloj del candidato)."""
+    emos = []
+    for e in item.get("emociones") or []:
+        if not isinstance(e, dict):
+            continue
+        t = _num(e.get("t"), -1)
+        if a <= t <= b:
+            kind = str(e.get("tipo") or "").lower()
+            emos.append({"t": round(t, 2), "tipo": kind if kind in EMOCIONES else "sorpresa",
+                         "texto": str(e.get("texto") or "").strip()[:40]})
+    textos = []
+    for z in item.get("zoom_texto") or []:
+        if not isinstance(z, dict):
+            continue
+        t = _num(z.get("t"), -1)
+        if a - 3 <= t <= b:
+            zona = str(z.get("zona") or "").lower()
+            textos.append({"t": round(max(a, t), 2), "zona": zona if zona in ZONAS_TEXTO else "juego",
+                           "texto": str(z.get("texto") or "").strip()[:120]})
+    caras = []
+    for w in item.get("facecam_completo") or []:
+        if not isinstance(w, dict):
+            continue
+        x, y = max(a, _num(w.get("inicio"))), min(b, _num(w.get("fin")))
+        y = min(y, x + 8.0)
+        if y - x >= 2.0:
+            caras.append({"inicio": round(x, 2), "fin": round(y, 2)})
+    reps = int(_num(item.get("repeticiones"), 0))
+    return {
+        "bloque": bloque, "emociones": emos, "zoom_texto": textos, "facecam_completo": caras[:2],
+        "rotulo": str(item.get("rotulo") or "").strip()[:40],
+        "conservar_silencios": bool(item.get("conservar_silencios")),
+        "zoom_final": bool(item.get("zoom_final")),
+        "repeticiones": min(3, max(2, reps)) if tipo == "gancho" else 0,
+    }
+
+
 def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dict, list[str]]:
     """Normaliza la decisión, recorta tiempos al rango de cada candidato y ajusta la duración."""
     from .effects import sfx_names
@@ -379,14 +422,23 @@ def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dic
     by_id = {int(c["id"]): c for c in candidates}
     sfx_available = set(sfx_names(cfg))
     guion = []
+    eufonia = cfg["edicion"].get("estilo", "eufonia") == "eufonia"
+    narraciones = 0
     for i, item in enumerate(raw.get("guion") or []):
         tipo = str(item.get("tipo", "")).lower()
+        bloque = str(item.get("bloque") or "").lower()
+        bloque = bloque if bloque in BLOQUES else ""
         if tipo == "narracion":
             texto = str(item.get("texto") or "").strip()
+            if texto and eufonia and narraciones >= 3:
+                warnings.append(f"guion[{i}]: el estilo Eufonía lleva como máximo 3 narraciones; se omite")
+                continue
             if texto:
-                guion.append({"tipo": "narracion", "texto": texto, "motivo": str(item.get("motivo") or "")})
+                narraciones += 1
+                guion.append({"tipo": "narracion", "texto": texto, "motivo": str(item.get("motivo") or ""),
+                              "bloque": bloque})
             continue
-        if tipo != "clip":
+        if tipo not in ("clip", "gancho"):
             warnings.append(f"guion[{i}]: tipo desconocido {tipo!r}")
             continue
         cid = int(_num(item.get("candidato_id"), -1))
@@ -413,12 +465,21 @@ def validate_decision(cfg: dict, raw: dict, candidates: list[dict]) -> tuple[dic
                           and min(other["end_ts"], cand["start_ts"] + b) - max(other["start_ts"], cand["start_ts"] + a) >= 10):
             warnings.append(f"guion[{i}]: pantalla dividida con {split} no aplica (no es el mismo suceso)")
             split = 0
+        if tipo == "gancho":
+            # Frase corta que se repite en arranque en frío: 0.6-4 s.
+            if b - a > 4.0:
+                center = mom if a <= mom <= b and mom > 0 else a + 1.5
+                a, b = max(a, center - 1.5), min(b, center + 1.5)
+            if b - a < 0.6:
+                warnings.append(f"guion[{i}]: gancho demasiado corto; se omite")
+                continue
         guion.append({
-            "tipo": "clip", "candidato_id": cid, "inicio": round(a, 2), "fin": round(b, 2),
-            "titulo_en_pantalla": str(item.get("titulo_en_pantalla") or "").strip()[:60],
+            "tipo": tipo, "candidato_id": cid, "inicio": round(a, 2), "fin": round(b, 2),
+            "titulo_en_pantalla": "" if eufonia else str(item.get("titulo_en_pantalla") or "").strip()[:60],
             "prioridad": int(min(5, max(1, _num(item.get("prioridad"), 3)))),
             "motivo": str(item.get("motivo") or ""),
             "momento_clave": mom, "efecto_sonido": sfx, "pantalla_dividida_con": split,
+            **_style_fields(item, a, b, tipo, bloque or ("gancho" if tipo == "gancho" else "cuerpo" if eufonia else "")),
         })
     if not any(g["tipo"] == "clip" for g in guion):
         raise ClaudeError("La decisión no tiene ningún clip válido")
