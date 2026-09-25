@@ -112,7 +112,7 @@ DEFAULTS: dict[str, Any] = {
         "modo": "api",                  # "api" o "manual" (pegar en claude.ai)
         "modelo": "claude-opus-5",
         "esfuerzo": "high",             # low | medium | high | xhigh | max
-        "max_tokens": 32000,
+        "max_tokens": 64000,            # tope de salida (pensamiento + JSON); solo se paga lo que se genera
         "presupuesto_mensual_usd": 10.0,
         "fallback_por_rechazo": True,   # reintento automático en otro modelo si hay rechazo
         "max_caracteres_transcripcion": 2500,  # por candidato
@@ -317,6 +317,9 @@ def validate(cfg: dict) -> dict:
         raise ConfigError("claude.modo debe ser 'api' o 'manual'")
     if cfg["claude"]["esfuerzo"] not in ("low", "medium", "high", "xhigh", "max"):
         raise ConfigError("claude.esfuerzo debe ser low, medium, high, xhigh o max")
+    # 32000 era el valor por defecto anterior y se quedaba corto (la decisión se cortaba por max_tokens).
+    mt = int(cfg["claude"]["max_tokens"])
+    cfg["claude"]["max_tokens"] = 64000 if mt == 32000 else max(16000, min(128000, mt))
     cuentas = cfg["x"].get("cuentas") or []
     if isinstance(cuentas, str):
         cuentas = cuentas.split(",")

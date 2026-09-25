@@ -2,7 +2,7 @@
 {% block title %}Sesión {{ fecha }}{% endblock %}
 {% block content %}
 <div class="row" style="justify-content:space-between">
-  <h1>Sesión {{ fecha }} <span class="badge {{ s.estado }}">{{ s.estado }}</span></h1>
+  <h1>Sesión {{ fecha }} <span id="ses_estado" class="badge {{ s.estado }}">{{ s.estado }}</span></h1>
   <div class="row">
     <button onclick="procesar('finalizar')">Procesar todo</button>
     {% if files.html %}<a class="btn sec" target="_blank" href="{{ url_for('files', fecha=fecha, rel='resumen_' ~ fecha ~ '.html') }}">Ver resumen</a>{% endif %}
@@ -13,8 +13,8 @@
 <div class="steps">
   {% for p in pasos %}{% set e = estado_pasos.get(p, {}) %}
   <div class="step">
-    <div><b>{{ loop.index }}. {{ p }}</b> <span class="badge {{ e.estado or '' }}">{{ e.estado or 'pendiente' }}</span></div>
-    <div class="small mut" style="max-width:220px">{{ e.detalle or '' }}</div>
+    <div><b>{{ loop.index }}. {{ p }}</b> <span id="paso_{{ p }}" class="badge {{ e.estado or '' }}">{{ e.estado or 'pendiente' }}</span></div>
+    <div id="det_{{ p }}" class="small mut" style="max-width:220px">{{ e.detalle or '' }}</div>
     <button class="sec small" onclick="procesar('{{ p }}')">desde aquí</button>
   </div>
   {% endfor %}
@@ -130,5 +130,28 @@ async function importar() {
     setTimeout(() => location.reload(), 2500);
   } catch (e) { toast(e.message, 8000); }
 }
+
+// Mientras el post-proceso corre, los pasos se actualizan solos (sin recargar ni perder lo escrito).
+let _corria = {{ 'true' if (s.estado == 'procesando') else 'false' }};
+async function refrescarPasos() {
+  try {
+    const r = await api(`/api/sesion/${FECHA}/pasos`);
+    const el = document.getElementById("ses_estado");
+    el.textContent = r.estado; el.className = "badge " + r.estado;
+    for (const [paso, e] of Object.entries(r.pasos || {})) {
+      const b = document.getElementById("paso_" + paso), d = document.getElementById("det_" + paso);
+      if (b) { b.textContent = e.estado || "pendiente"; b.className = "badge " + (e.estado || ""); }
+      if (d) d.textContent = e.detalle || "";
+    }
+    const activo = r.corriendo || Object.values(r.pasos || {}).some(e => e.estado === "en_curso");
+    if (_corria && !activo) {                 // terminó: recargar para ver el video y los resultados
+      const t = document.activeElement;
+      if (!t || (t.tagName !== "TEXTAREA" && t.tagName !== "INPUT")) { location.reload(); return; }
+    }
+    _corria = activo;
+    setTimeout(refrescarPasos, activo ? 4000 : 15000);
+  } catch (e) { setTimeout(refrescarPasos, 15000); }
+}
+setTimeout(refrescarPasos, 3000);
 </script>
 {% endblock %}

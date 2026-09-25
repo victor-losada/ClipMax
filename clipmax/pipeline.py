@@ -175,7 +175,8 @@ class Pipeline:
             raise WaitingForClaude(f"Paquete listo para pegar en claude.ai: {path.name}")
         candidates, material = self._material()
         try:
-            raw = brain.decide_api(self.cfg, self.db, self.session, material)
+            self.progress("Claude arma el guion del día (tarda varios minutos)…")
+            raw = brain.decide_api(self.cfg, self.db, self.session, material, self.progress)
         except (brain.BudgetExceeded, brain.ClaudeError) as exc:
             # Sin presupuesto, sin clave o con la API caída: el día no se pierde, queda el modo manual.
             # (Para reintentar la API, re-ejecuta el paso "decidir" desde la web.)

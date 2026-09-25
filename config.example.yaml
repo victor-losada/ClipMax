@@ -125,7 +125,7 @@ claude:
   modo: "api"                 # api (automático) | manual (paquete para pegar en claude.ai, $0)
   modelo: "claude-opus-5"     # "claude-sonnet-5" cuesta ~40 % de Opus; ver docs/ARQUITECTURA.md
   esfuerzo: "high"            # low | medium | high | xhigh | max
-  max_tokens: 32000
+  max_tokens: 64000          # tope de salida (pensamiento + JSON); solo se paga lo que se genera
   presupuesto_mensual_usd: 10 # si una llamada haría pasar este tope, no se llama (se usa el modo manual)
   fallback_por_rechazo: true
   max_caracteres_transcripcion: 2500   # por candidato

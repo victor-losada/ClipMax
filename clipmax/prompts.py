@@ -23,10 +23,10 @@ from .timeutil import fmt_clock
 
 MASTER_PROMPT_PATH = PROJECT_ROOT / "prompts" / "prompt_maestro.md"
 
-# Esquema de salida (structured outputs). Todas las propiedades son obligatorias y
-# additionalProperties=false, como exige la API; los rangos se validan en brain.py.
-# Sin "enum": la API compila el esquema a una gramática con tamaño máximo y este esquema es grande.
-# Los valores permitidos los dice el prompt y brain.validate_decision normaliza cualquier otro.
+# Forma de la decisión del día. Ya NO se manda como salida estructurada: la API compila el esquema a
+# una gramática con tamaño máximo y este no cabe ("compiled grammar is too large"). El prompt pide solo
+# JSON (y permite omitir campos vacíos) y brain.validate_decision normaliza lo que llegue. Se mantiene
+# como referencia de los campos y para las pruebas.
 _GUION_ITEM = {
     "type": "object",
     "properties": {

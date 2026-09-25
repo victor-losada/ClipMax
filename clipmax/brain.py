@@ -25,7 +25,7 @@ from pathlib import Path
 from .config import session_dir
 from .mentions import normalize
 from .db import Database
-from .prompts import CLIP_SCHEMA, OUTPUT_SCHEMA, clip_prompt, master_prompt
+from .prompts import CLIP_SCHEMA, clip_prompt, master_prompt
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 FALLBACK_MODELS = {"claude-opus-5", "claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"}
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 # Salida esperada para el cálculo previo de costo (guion + reporte + razonamiento).
-EXPECTED_OUTPUT_TOKENS = 14000
+EXPECTED_OUTPUT_TOKENS = 30000   # pensamiento + JSON de la decisión (medido: ~25-35 mil con esfuerzo "high")
 
 
 class BudgetExceeded(RuntimeError):
@@ -116,20 +116,64 @@ def _text_of(message) -> str:
     return "".join(b.text for b in message.content if getattr(b, "type", "") == "text")
 
 
-def _stream_call(client, params: dict, use_fallback: bool):
+def _consume(stream, progress=None):
+    """Lee el stream hasta el final. Con `progress`, cada pocos segundos informa si Claude está
+    pensando o escribiendo, el tiempo y cuánto lleva escrito (la decisión tarda varios minutos)."""
+    if progress is None:
+        return stream.get_final_message()
+    import threading
+
+    t0 = time.time()
+    state = {"fase": "pensando", "chars": 0}
+    stop = threading.Event()
+
+    def text() -> str:
+        m, sec = divmod(int(time.time() - t0), 60)
+        written = f" · {state['chars'] / 1000:.1f} mil caracteres" if state["chars"] else ""
+        return f"Claude {state['fase']}… {m}:{sec:02d}{written}"
+
+    def ticker() -> None:
+        n = 0
+        while not stop.wait(4):
+            n += 1
+            try:
+                progress(text())
+            except Exception:  # noqa: BLE001 - el progreso nunca debe cortar la llamada
+                pass
+            if n % 15 == 0:
+                log.info("%s", text())
+
+    threading.Thread(target=ticker, name="claude-progreso", daemon=True).start()
+    try:
+        for ev in stream:
+            kind = getattr(ev, "type", "")
+            if kind == "content_block_start":
+                block = getattr(getattr(ev, "content_block", None), "type", "")
+                if block == "text":
+                    state["fase"] = "escribiendo"
+                elif block in ("thinking", "redacted_thinking"):
+                    state["fase"] = "pensando"
+            elif kind == "content_block_delta" and getattr(ev.delta, "type", "") == "text_delta":
+                state["chars"] += len(ev.delta.text)
+        return stream.get_final_message()
+    finally:
+        stop.set()
+
+
+def _stream_call(client, params: dict, use_fallback: bool, progress=None):
     """Llamada en streaming (evita timeouts con max_tokens altos) con fallback opcional."""
     import anthropic
 
     if use_fallback:
         try:
             with client.beta.messages.stream(**params, betas=[FALLBACK_BETA], fallbacks="default") as stream:
-                return stream.get_final_message()
+                return _consume(stream, progress)
         except anthropic.BadRequestError as exc:
             if "fallback" not in str(exc).lower():
                 raise
             log.info("El modelo no acepta fallbacks; reintento sin ellos")
     with client.beta.messages.stream(**params) as stream:
-        return stream.get_final_message()
+        return _consume(stream, progress)
 
 
 # Esquemas que la API rechazó en esta ejecución (p. ej. "compiled grammar is too large"): no se reintentan.
@@ -172,7 +216,7 @@ def _parse_json(text: str, what: str) -> dict:
         raise ClaudeError(f"Claude no devolvió JSON válido ({what}): {text[:300]}") from exc
 
 
-def decide_api(cfg: dict, db: Database, session: dict, material: str) -> dict:
+def decide_api(cfg: dict, db: Database, session: dict, material: str, progress=None) -> dict:
     """Pide a Claude la decisión editorial del día. Devuelve el dict crudo de Claude."""
     import anthropic
 
@@ -222,7 +266,9 @@ def decide_api(cfg: dict, db: Database, session: dict, material: str) -> dict:
     use_fallback = bool(cfg["claude"]["fallback_por_rechazo"]) and model in FALLBACK_MODELS
     t0 = time.time()
     try:
-        msg = _with_schema("decision", params, OUTPUT_SCHEMA, lambda p: _stream_call(client, p, use_fallback))
+        # Sin salida estructurada: el esquema de la decisión es demasiado grande para la API
+        # ("compiled grammar is too large"). El prompt pide solo JSON y validate_decision lo revisa.
+        msg = _stream_call(client, params, use_fallback, progress)
     except anthropic.AuthenticationError as exc:
         raise ClaudeError("ANTHROPIC_API_KEY inválida o ausente (revisa el archivo .env)") from exc
     except anthropic.RateLimitError as exc:
@@ -252,7 +298,8 @@ def decide_api(cfg: dict, db: Database, session: dict, material: str) -> dict:
         raise ClaudeError(f"Claude rechazó la solicitud ({getattr(details, 'category', None)}). "
                           "Revisa el contexto de X pegado o usa el modo manual.")
     if msg.stop_reason == "max_tokens":
-        raise ClaudeError("La respuesta se cortó por max_tokens; sube claude.max_tokens en la configuración")
+        raise ClaudeError(f"La respuesta se cortó al llegar a {params['max_tokens']} tokens; sube claude.max_tokens "
+                          "o baja claude.esfuerzo en la configuración")
     return _parse_json(_text_of(msg), "decisión")
 
 
