@@ -181,6 +181,8 @@ DEFAULTS: dict[str, Any] = {
         "duracion_min_s": 15,
         "duracion_max_s": 60,
         "intervalo_s": 60,               # cada cuánto revisa si hay un momento listo para clip
+        # Claude solo descarta silencios, fallas técnicas y publicidad; con esto también los "flojos".
+        "descartar_flojos": False,
     },
     "web": {"host": "127.0.0.1", "puerto": 5000, "abrir_navegador": True},
 }

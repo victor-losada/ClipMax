@@ -225,6 +225,12 @@ def create_app(store: ConfigStore, db: Database, manager: SessionManager) -> Fla
             return _err("Los clips en vivo se hacen mientras se graba (inicia la sesión)")
         return jsonify({"ok": True})
 
+    @app.post("/api/clips-vivo/<int:clip_id>/publicar")
+    def api_live_clip_force(clip_id: int):
+        if not manager.force_clip(clip_id):
+            return _err("clip no encontrado", 404)
+        return jsonify({"ok": True})
+
     @app.post("/api/clips-vivo/<int:clip_id>/subido")
     def api_live_clip_uploaded(clip_id: int):
         c = db.live_clip(clip_id)

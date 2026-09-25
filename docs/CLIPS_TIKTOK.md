@@ -19,7 +19,8 @@ Cada minuto, ClipMax mira los mejores momentos que viene detectando (picos de ch
 En el Panel, cada clip tiene su miniatura y los botones **Descargar**, **Copiar caption** (con hashtags) y **subido**. "Subido" es una marca para que sepas cuáles ya publicaste.
 
 - **🎬 clip** en la tabla de candidatos: pide un clip de ese momento aunque ya se haya llegado al tope por hora.
-- Los clips que Claude descarta (gameplay sin conversación, etc.) no aparecen en el Panel; la página de la sesión los muestra con el motivo.
+- Claude solo descarta un momento por razones de fondo: no pasa nada (pantalla de espera, AFK, silencio), el stream falla, o es publicidad o lectura de donaciones. Si le parece "flojo" (charla sin remate, transcripción cortada) se publica igual y lo dice en la nota; tú eliges qué subir. Para que también descarte los flojos: Configuración → "Que Claude también descarte los momentos flojos".
+- Los descartados aparecen con su motivo y un botón **Publicar igual** que arma el clip en 1-2 minutos, también después de terminar la grabación. Los clips pedidos con **🎬 clip** siempre se publican.
 - Los procesos de los clips corren con prioridad baja para no quitarle CPU a la grabación. Si el equipo va justo, baja `clips_vivo.max_por_hora`.
 
 Configuración → "Clips para TikTok en vivo": activar/desactivar, usar Claude o no, máximo por hora y duración mínima/máxima.

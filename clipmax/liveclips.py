@@ -81,9 +81,14 @@ def fit_window(cfg: dict, a: float, b: float, dur: float, key: float | None) -> 
     return round(a, 2), round(b, 2)
 
 
+DESCARTES = ("sin_contenido", "tecnico", "publicidad", "poco_interes")
+DESCARTES_DUROS = {"sin_contenido", "tecnico", "publicidad"}
+
+
 def normalize_decision(cfg: dict, raw: dict, cand: dict) -> dict:
     """Lo que devolvió Claude, validado: tiempos dentro del tramo, duración permitida, textos cortos."""
     dur = cand["duracion"]
+    descarte = str(raw.get("descarte") or "").strip().lower()
     key = _num(raw.get("momento_clave"), -1.0)
     key = key if 0.0 <= key <= dur else None
     a, b = fit_window(cfg, _num(raw.get("inicio")), _num(raw.get("fin"), dur), dur, key)
@@ -92,6 +97,9 @@ def normalize_decision(cfg: dict, raw: dict, cand: dict) -> dict:
     sfx = str(raw.get("efecto_sonido") or "").strip().lower()
     return {
         "publicar": bool(raw.get("publicar", True)),
+        "descarte": descarte if descarte in DESCARTES else ("" if raw.get("publicar", True) else "poco_interes"),
+        "sin_corte": _num(raw.get("fin")) <= _num(raw.get("inicio")),
+        "sin_titulo": not str(raw.get("titulo") or "").strip(),
         "motivo": str(raw.get("motivo") or "").strip()[:300],
         "inicio": a, "fin": b, "momento_clave": key,
         "titulo": str(raw.get("titulo") or "").strip()[:60] or cand["nombre"].upper(),
@@ -102,6 +110,18 @@ def normalize_decision(cfg: dict, raw: dict, cand: dict) -> dict:
         "zoom_texto": [z for z in raw.get("zoom_texto") or [] if isinstance(z, dict)
                        and 0 <= _num(z.get("t"), -1) <= dur],
     }
+
+
+def should_publish(cfg: dict, decision: dict, force: bool = False) -> tuple[bool, str]:
+    """Claude solo descarta de verdad silencios, fallas técnicas y publicidad; lo "flojo" se publica
+    igual (salvo clips_vivo.descartar_flojos) y lo pedido a mano siempre se publica."""
+    if decision["publicar"]:
+        return True, decision["motivo"]
+    if force:
+        return True, f"publicado a mano (Claude lo había descartado: {decision['motivo']})"[:300]
+    if decision["descarte"] in DESCARTES_DUROS or cfg["clips_vivo"].get("descartar_flojos"):
+        return False, decision["motivo"]
+    return True, f"Claude lo veía flojo ({decision['motivo']}); se publica igual"[:300]
 
 
 def heuristic_decision(cfg: dict, db: Database, session: dict, cand: dict, moment: dict) -> dict:
@@ -168,6 +188,7 @@ class LiveClipper(threading.Thread):
         self._wake = threading.Event()
         self._lock = threading.Lock()
         self._requests: list[int] = []
+        self._forced: list[int] = []      # clips descartados que el usuario pidió publicar igual
         self._status: dict = {"estado": "esperando", "detalle": "", "hechos": 0}
         self._sfx: dict | None = None
 
@@ -184,6 +205,26 @@ class LiveClipper(threading.Thread):
     def stop(self) -> None:
         self._stop_evt.set()
         self._wake.set()
+
+    def force(self, clip_id: int) -> None:
+        """"Publicar igual" un clip que Claude descartó (botón de la web)."""
+        with self._lock:
+            if clip_id not in self._forced:
+                self._forced.append(clip_id)
+        self._wake.set()
+
+    def publish(self, clip_id: int) -> int | None:
+        """Rehace un clip descartado forzando la publicación (también con la sesión ya cerrada)."""
+        c = self.db.live_clip(clip_id)
+        if not c or c["estado"] not in ("descartado", "error"):
+            return None
+        moment = {"id": None, "slug": c["slug"], "start_ts": c["start_ts"], "end_ts": c["end_ts"],
+                  "score": c.get("score") or 0, "componentes": {}}
+        for m in self.db.moments(self.session["id"]):
+            if m["slug"] == c["slug"] and _overlap(m["start_ts"], m["end_ts"], c["start_ts"], c["end_ts"]) > 0:
+                moment = m
+                break
+        return self.make(moment, force=True, cid=clip_id)
 
     def request(self, moment_id: int) -> None:
         """Clip pedido a mano desde el Panel: salta el tope por hora."""
@@ -212,6 +253,10 @@ class LiveClipper(threading.Thread):
     def step(self) -> int | None:
         cv = self.cfg["clips_vivo"]
         sid = self.session["id"]
+        with self._lock:
+            forced = self._forced.pop(0) if self._forced else None
+        if forced is not None:
+            return self.publish(forced)
         moments = {m["id"]: m for m in self.db.moments(sid)}
         with self._lock:
             pending = [moments[i] for i in self._requests if i in moments]
@@ -220,7 +265,7 @@ class LiveClipper(threading.Thread):
         if ripe:
             with self._lock:
                 self._requests.remove(ripe[0]["id"])
-            return self.make(ripe[0])
+            return self.make(ripe[0], force=True)       # pedido a mano: se publica aunque Claude dude
         if not cv["activo"]:
             return None
         recent = [c for c in self.db.live_clips(sid, ("listo", "procesando"))
@@ -248,16 +293,20 @@ class LiveClipper(threading.Thread):
             return m
         return None
 
-    def make(self, moment: dict) -> int:
+    def make(self, moment: dict, force: bool = False, cid: int | None = None) -> int:
         cfg, db = self.cfg, self.db
         name = streamer_name(cfg, moment["slug"])
-        cid = db.add_live_clip(session_id=self.session["id"], slug=moment["slug"], start_ts=moment["start_ts"],
-                               end_ts=moment["end_ts"], score=float(moment.get("score") or 0), estado="procesando")
+        if cid is None:
+            cid = db.add_live_clip(session_id=self.session["id"], slug=moment["slug"], start_ts=moment["start_ts"],
+                                   end_ts=moment["end_ts"], score=float(moment.get("score") or 0),
+                                   estado="procesando")
+        else:
+            db.update_live_clip(cid, estado="procesando", nota="")
         self._set(estado="procesando", detalle=f"{name} · {fmt_clock(moment['start_ts'], cfg, seconds=False)}")
         t0 = time.time()
         try:
             with tools.background_priority():
-                result = self._build(cid, moment)
+                result = self._build(cid, moment, force)
         except Exception as exc:  # noqa: BLE001
             log.warning("Clip en vivo de %s falló: %s", name, exc)
             db.update_live_clip(cid, estado="error", nota=str(exc)[-300:])
@@ -270,7 +319,7 @@ class LiveClipper(threading.Thread):
         self._set(estado="esperando", detalle=f"último: {name} ({result})")
         return cid
 
-    def _build(self, cid: int, moment: dict) -> str:
+    def _build(self, cid: int, moment: dict, force: bool = False) -> str:
         cfg, db, session = self.cfg, self.db, self.session
         sid, slug = session["id"], moment["slug"]
         loc = locate_range(db, sid, slug, moment["start_ts"], moment["end_ts"], float(cfg["grabacion"]["desfase_chat_s"]))
@@ -301,9 +350,17 @@ class LiveClipper(threading.Thread):
                 log.warning("Clip en vivo sin Claude (%s); uso reglas automáticas", exc)
         if decision is None:
             decision = heuristic_decision(cfg, db, session, cand, moment)
+        publish, nota = should_publish(cfg, decision, force)
+        if publish and (decision.get("sin_corte") or decision.get("sin_titulo")):
+            # Claude lo descartó sin proponer corte o título: se usan las reglas automáticas para eso.
+            auto = heuristic_decision(cfg, db, session, cand, moment)
+            if decision.get("sin_corte"):
+                decision.update(inicio=auto["inicio"], fin=auto["fin"], momento_clave=auto["momento_clave"])
+            if decision.get("sin_titulo"):
+                decision.update(titulo=auto["titulo"], caption=decision["caption"] or auto["caption"])
         common = {"origen": origen, "titulo": decision["titulo"], "caption": decision["caption"],
-                  "hashtags": decision["hashtags"], "nota": decision["motivo"]}
-        if not decision["publicar"]:
+                  "hashtags": decision["hashtags"], "nota": nota}
+        if not publish:
             db.update_live_clip(cid, estado="descartado", **common)
             return "descartado"
         # 3) Render vertical con efectos.

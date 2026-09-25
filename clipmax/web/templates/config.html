@@ -70,6 +70,7 @@
     <h3>Clips para TikTok en vivo</h3>
     <label class="row"><input type="checkbox" id="cv_activo"> Armar clips mientras se graba (se descargan desde el Panel)</label>
     <label class="row"><input type="checkbox" id="cv_claude"> Que Claude elija corte, título y caption (<span id="cv_modelo"></span>, ~$0.005 por clip)</label>
+    <label class="row"><input type="checkbox" id="cv_flojos"> Que Claude también descarte los momentos flojos (si no, solo descarta silencios, fallas técnicas y publicidad)</label>
     <div class="row">
       <div><label>Máximo por hora</label><input id="cv_hora" type="number" min="0" max="60" style="width:70px"></div>
       <div><label>Duración mín. (s)</label><input id="cv_min" type="number" min="5" max="170" style="width:70px"></div>
@@ -130,7 +131,7 @@ function fill() {
   if (![...$("ed_nvel").options].some(o => o.value === vel)) $("ed_nvel").add(new Option(vel, vel));
   $("ed_nvel").value = vel;
   const cv = CFG.clips_vivo;
-  $("cv_activo").checked = cv.activo; $("cv_claude").checked = cv.usar_claude; $("cv_modelo").textContent = cv.modelo;
+  $("cv_activo").checked = cv.activo; $("cv_claude").checked = cv.usar_claude; $("cv_flojos").checked = !!cv.descartar_flojos; $("cv_modelo").textContent = cv.modelo;
   $("cv_hora").value = cv.max_por_hora; $("cv_min").value = cv.duracion_min_s; $("cv_max").value = cv.duracion_max_s;
   $("fx_subs").checked = ed.subtitulos; $("fx_palabras").value = String(ed.subtitulos_palabras);
   $("fx_zoom").checked = ed.zoom; $("fx_split").checked = ed.pantalla_dividida;
@@ -200,7 +201,7 @@ function collect() {
     efectos_sonido: $("fx_sfx").checked, sfx_max_por_video: parseInt($("fx_max").value || "0"),
     desfase_audio_s: parseFloat($("fx_daudio").value || "0"), subtitulos_desfase_s: parseFloat($("fx_dsubs").value || "0") });
   cfg.grabacion.calidad_max = parseInt($("gr_calidad").value);
-  Object.assign(cfg.clips_vivo, { activo: $("cv_activo").checked, usar_claude: $("cv_claude").checked,
+  Object.assign(cfg.clips_vivo, { activo: $("cv_activo").checked, usar_claude: $("cv_claude").checked, descartar_flojos: $("cv_flojos").checked,
     max_por_hora: parseInt($("cv_hora").value || "0"), duracion_min_s: parseInt($("cv_min").value || "15"),
     duracion_max_s: parseInt($("cv_max").value || "60") });
   cfg.streamers = [...$("tbl").querySelectorAll("tr")].map(tr => ({

@@ -82,14 +82,49 @@ def test_live_clip_with_claude_then_no_repeat(cfg, db, tmp_path, monkeypatch):
     assert clipper.step() is None and len(calls) == 1
 
 
+def test_only_hard_reasons_discard_a_clip(cfg):
+    base = {"publicar": False, "descarte": "", "motivo": "banter sin remate"}
+    assert liveclips.should_publish(cfg, {**base, "publicar": True}) == (True, "banter sin remate")
+    ok, nota = liveclips.should_publish(cfg, {**base, "descarte": "poco_interes"})
+    assert ok and "flojo" in nota                                            # lo flojo se publica igual
+    for hard in ("sin_contenido", "tecnico", "publicidad"):
+        assert liveclips.should_publish(cfg, {**base, "descarte": hard}) == (False, "banter sin remate")
+    assert liveclips.should_publish(cfg, {**base, "descarte": "tecnico"}, force=True)[0]   # pedido a mano
+    cfg["clips_vivo"]["descartar_flojos"] = True
+    assert not liveclips.should_publish(cfg, {**base, "descarte": "poco_interes"})[0]
+    # Claude dijo que no sin categoría: cuenta como "flojo".
+    cand = {"slug": "westcol", "nombre": "Westcol", "duracion": 70.0}
+    d = normalize_decision(cfg, {**GOOD, "publicar": False, "inicio": 0, "fin": 0, "titulo": ""}, cand)
+    assert d["descarte"] == "poco_interes" and d["sin_corte"] and d["sin_titulo"]
+
+
 @pytest.mark.skipif(not has_ffmpeg(), reason="ffmpeg no instalado")
-def test_live_clip_discarded_by_claude(cfg, db, tmp_path, monkeypatch):
+def test_live_clip_discarded_by_claude_then_published_anyway(cfg, db, tmp_path, monkeypatch):
     cfg["claude"]["modo"] = "api"
     s = _session_with_moment(cfg, db, tmp_path)
-    monkeypatch.setattr(brain, "curate_live_clip", _fake_curate({**GOOD, "publicar": False,
-                                                                 "motivo": "gameplay sin conversación"})[0])
+    monkeypatch.setattr(brain, "curate_live_clip", _fake_curate({
+        **GOOD, "publicar": False, "descarte": "sin_contenido", "motivo": "pantalla de espera",
+        "inicio": 0, "fin": 0, "titulo": ""})[0])
+    clipper = LiveClipper(cfg, db, s)
+    cid = clipper.step()
+    c = db.live_clip(cid)
+    assert c["estado"] == "descartado" and c["nota"] == "pantalla de espera" and not c["path"]
+    # Botón "Publicar igual": mismo clip, corte y título de las reglas automáticas.
+    clipper.force(cid)
+    assert clipper.step() == cid
+    c = db.live_clip(cid)
+    assert c["estado"] == "listo" and c["path"] and "publicado a mano" in c["nota"]
+    assert c["titulo"] and len(db.live_clips(s["id"])) == 1
+
+
+@pytest.mark.skipif(not has_ffmpeg(), reason="ffmpeg no instalado")
+def test_weak_moment_is_published_by_default(cfg, db, tmp_path, monkeypatch):
+    cfg["claude"]["modo"] = "api"
+    s = _session_with_moment(cfg, db, tmp_path)
+    monkeypatch.setattr(brain, "curate_live_clip", _fake_curate({
+        **GOOD, "publicar": False, "descarte": "poco_interes", "motivo": "transcripción fragmentaria"})[0])
     c = db.live_clip(LiveClipper(cfg, db, s).step())
-    assert c["estado"] == "descartado" and c["nota"] == "gameplay sin conversación" and not c["path"]
+    assert c["estado"] == "listo" and "flojo" in c["nota"] and c["titulo"] == "GEAR NO AGUANTÓ"
 
 
 @pytest.mark.skipif(not has_ffmpeg(), reason="ffmpeg no instalado")
@@ -134,6 +169,28 @@ def test_curate_live_clip_request(cfg, db, monkeypatch):
     assert "TikTok" in seen["system"] and "{{" not in seen["system"]
     run = db.claude_runs()[0]
     assert run["tipo"] == "clip_vivo" and run["costo_usd"] == pytest.approx(1500 * 1 / 1e6 + 200 * 5 / 1e6)
+    # La API rechaza el esquema (gramática muy grande): se repite sin él y se lee el JSON del texto.
+    import anthropic
+    import httpx2
+
+    calls = []
+
+    def create(**params):
+        calls.append(dict(params))
+        if "format" in params.get("output_config", {}):
+            resp = httpx2.Response(400, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
+            raise anthropic.BadRequestError("The compiled grammar is too large", response=resp, body=None)
+        usage = SimpleNamespace(input_tokens=1500, output_tokens=200, cache_creation_input_tokens=0,
+                                cache_read_input_tokens=0, server_tool_use=None)
+        return SimpleNamespace(model=params["model"], stop_reason="end_turn", usage=usage,
+                               content=[SimpleNamespace(type="text", text="```json\n" + json.dumps(GOOD) + "\n```")])
+    FakeClient.messages.create = staticmethod(create)
+    brain._SCHEMA_OFF.discard("clip")
+    out = brain.curate_live_clip(cfg, db, {"id": 1, "fecha": "2026-09-25"}, "material")
+    assert out["titulo"] == "GEAR NO AGUANTÓ" and len(calls) == 2 and "output_config" not in calls[1]
+    brain.curate_live_clip(cfg, db, {"id": 1, "fecha": "2026-09-25"}, "material")
+    assert len(calls) == 3 and "output_config" not in calls[2]            # ya no se reintenta con esquema
+    brain._SCHEMA_OFF.discard("clip")
     # Presupuesto agotado: no se llama.
     cfg["claude"]["presupuesto_mensual_usd"] = 0.0001
     with pytest.raises(brain.BudgetExceeded):

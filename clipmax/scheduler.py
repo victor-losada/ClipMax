@@ -132,6 +132,24 @@ class SessionManager:
             self.clipper.request(moment_id)
             return True
 
+    def force_clip(self, clip_id: int) -> bool:
+        """"Publicar igual" un clip en vivo descartado. Con la grabación en curso va a la cola del
+        armador de clips; si ya terminó, se arma en un hilo aparte."""
+        c = self.db.live_clip(clip_id)
+        if not c:
+            return False
+        with self._lock:
+            if self.clipper and self.session and self.session["id"] == c["session_id"]:
+                self.clipper.force(clip_id)
+                return True
+        session = self.db.get_session(c["session_id"])
+        if not session:
+            return False
+        clipper = LiveClipper(self.store.get(), self.db, session)
+        self.db.update_live_clip(clip_id, estado="procesando", nota="en cola")
+        threading.Thread(target=clipper.publish, args=(clip_id,), name=f"clip-forzado-{clip_id}", daemon=True).start()
+        return True
+
     def shutdown(self) -> None:
         """Al cerrar ClipMax: detiene todo pero deja la sesión en 'grabando' para retomarla
         si se vuelve a abrir dentro del horario."""

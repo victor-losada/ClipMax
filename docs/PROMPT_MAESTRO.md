@@ -78,3 +78,7 @@ python -m clipmax importar-respuesta respuesta.json --fecha 2026-09-23
 - **Contexto de X**: 5–15 posts relevantes bastan. Si copias el enlace del post, se guarda el autor. Los temas repetidos también suben la puntuación de los candidatos que los mencionan.
 - **Alias**: agrega los apodos con que el chat y los demás streamers llaman a cada uno. Así mejora mucho la detección de menciones.
 - **Re-editar sin pagar de nuevo**: si cambias el formato (vertical/horizontal) o la narración, usa "desde aquí" en el paso **editar**. La decisión de Claude se reutiliza.
+
+## Salida estructurada
+
+La API compila el esquema de respuesta (`clipmax/prompts.py: OUTPUT_SCHEMA`) a una gramática que tiene un tamaño máximo. Por eso el esquema no usa `enum`: los valores permitidos los dice el prompt y `validate_decision` normaliza cualquier otro. Si aun así la API lo rechaza ("The compiled grammar is too large"), ClipMax repite la llamada sin esquema en el acto (el error no se cobra). El prompt ya pide solo JSON y la respuesta se valida igual.
