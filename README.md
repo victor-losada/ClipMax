@@ -51,7 +51,7 @@ clipmax/
   demo.py          demo de punta a punta con datos sintéticos
 prompts/prompt_maestro.md
 arrancar.py        lanzador de los .bat (verifica la carpeta clipmax y ejecuta python -m clipmax)
-tests/             77 pruebas (incluye grabación y render reales con ffmpeg)
+tests/             79 pruebas (incluye grabación y render reales con ffmpeg)
 ```
 
 ## Pruebas

@@ -70,7 +70,7 @@ def test_ass_highlights_current_word():
 
 def test_zoom_filter_expression():
     z = effects.zoom_filter("vl", "vz", 3.0, (1280, 720), 30, 1.12)
-    assert z.startswith("[vl]zoompan=") and "s=1280x720" in z and "it-2.650" in z and z.endswith("[vz]")
+    assert z.startswith("[vl]fps=30,zoompan=") and "s=1280x720" in z and "it-2.650" in z and z.endswith("[vz]")
     assert "setpts=N/(30*TB)" in z  # sin esto, fps posterior duplica fotogramas sin fin
 
 
@@ -182,3 +182,54 @@ def test_whisper_retries_without_ojf(cfg, tmp_path, monkeypatch):
     monkeypatch.setattr(tr, "model_path", lambda which: tmp_path / "m.bin")
     segs = tr.transcribe_wav(tmp_path / "audio.wav")
     assert [s.text for s in segs] == ["hola"] and len(calls) == 2 and "-ojf" not in calls[1]
+
+
+def _flashes_and_beeps(path):
+    """Destellos blancos (video) y pitidos (audio) de un archivo, en segundos."""
+    import re
+    out = subprocess.run(["ffprobe", "-v", "error", "-f", "lavfi", "-i", f"movie={path},signalstats",
+                          "-show_entries", "frame=pts_time:frame_tags=lavfi.signalstats.YAVG", "-of", "json"],
+                         capture_output=True, text=True, check=True).stdout
+    flashes, prev = [], False           # intervalos [inicio, fin] en blanco
+    for f in json.loads(out)["frames"]:
+        on, t = float(f["tags"]["lavfi.signalstats.YAVG"]) > 120, float(f["pts_time"])
+        if on and not prev:
+            flashes.append([t, t])
+        elif on:
+            flashes[-1][1] = t
+        prev = on
+    err = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af",
+                          "silencedetect=n=-35dB:d=0.3", "-f", "null", "-"], capture_output=True, text=True).stderr
+    return flashes, [float(x) for x in re.findall(r"silence_end: ([\d.]+)", err)]
+
+
+@pytest.mark.skipif(not has_ffmpeg(), reason="ffmpeg no instalado")
+@pytest.mark.parametrize("ext", ["mp4", "ts"])
+def test_60fps_source_keeps_speed_and_sync(cfg, tmp_path, ext):
+    """Kick transmite a 60 fps con un keyframe cada 2 s. El zoom renumeraba a 30 fps (cámara lenta
+    al doble) y el corte con -ss desfasaba el video respecto al audio hasta 2 s."""
+    src = tmp_path / f"src.{ext}"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "color=c=black:s=320x180:r=60:d=16,"
+                    "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='lt(mod(t,2),0.1)'",
+                    "-f", "lavfi", "-i", "aevalsrc='if(lt(mod(t,2),0.1),0.8*sin(2*PI*1000*t),0)':s=48000:d=16",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-r", "60", "-g", "120", "-c:a", "aac",
+                    *(["-f", "mpegts"] if ext == "ts" else []), str(src)], check=True)
+    cfg["edicion"]["subtitulos"] = False
+    # Corte a mitad de GOP (3.0 s; keyframes en 2 y 4) con un hueco recortado y zoom en el segundo 4.
+    spec = editor.ClipSpec("westcol", "Westcol", str(src), 3.0, 12.0, 0.0,
+                           keep=[(0.0, 5.0), (6.0, 12.0)], momento=4.0)
+    out = tmp_path / "out.mp4"
+    kept = editor._render_clip(cfg, spec, out, (320, 180), None, tmp_path, None, True)
+    from clipmax.tools import probe_duration
+    assert probe_duration(out) == pytest.approx(kept, abs=0.3)
+    flashes, beeps = _flashes_and_beeps(out)
+    beeps = [b for b in beeps if b < kept - 0.2]
+    # Velocidad normal: un pitido cada 2 s en cada tramo (1, 3, 5 | 6.0 -> 7, 9, 11 menos 1 s de hueco).
+    assert beeps == pytest.approx([1.0, 3.0, 6.0, 8.0, 10.0], abs=0.06)
+    # Sincronía: cada pitido cae en un destello. En .ts el video arranca en el keyframe siguiente y
+    # el primer fotograma se sostiene desde 0 (relleno): ese primer destello empieza antes.
+    for b in beeps:
+        assert any(a - 0.08 <= b <= z + 0.05 for a, z in flashes), (flashes, beeps)
+        if b > 2:
+            assert min(abs(a - b) for a, _z in flashes) < 0.08, (flashes, beeps)
