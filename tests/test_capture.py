@@ -121,6 +121,66 @@ def test_decide_api_builds_expected_request(cfg, db, monkeypatch):
     assert run["costo_usd"] == pytest.approx(1000 * 5 / 1e6 + 500 * 25 / 1e6)
 
 
+def test_decide_api_retries_without_schema_when_grammar_is_too_large(cfg, db, monkeypatch):
+    import anthropic
+    import httpx2
+
+    raw = {"titulo_video": "T", "guion": []}
+    calls = []
+
+    class Stream:
+        def __init__(self, params):
+            calls.append(params)
+            self.params = params
+
+        def __enter__(self):
+            if "format" in self.params.get("output_config", {}):
+                resp = httpx2.Response(400, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
+                raise anthropic.BadRequestError(
+                    "The compiled grammar is too large, which would cause performance issues.", response=resp,
+                    body=None)
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get_final_message(self):
+            usage = SimpleNamespace(input_tokens=1000, output_tokens=500, cache_creation_input_tokens=0,
+                                    cache_read_input_tokens=0, server_tool_use=None)
+            return SimpleNamespace(model="claude-opus-5", stop_reason="end_turn", usage=usage,
+                                   content=[SimpleNamespace(type="text", text="Aquí va:\n```json\n"
+                                                            + json.dumps(raw) + "\n```")],
+                                   to_json=lambda: "{}")
+
+    class FakeClient:
+        class messages:
+            @staticmethod
+            def count_tokens(**_):
+                return SimpleNamespace(input_tokens=1000)
+
+        class beta:
+            class messages:
+                @staticmethod
+                def stream(**params):
+                    return Stream(params)
+
+    monkeypatch.setattr(brain, "_client", lambda: FakeClient())
+    brain._SCHEMA_OFF.discard("decision")
+    try:
+        out = brain.decide_api(cfg, db, {"id": 1, "fecha": "2026-09-23"}, "material")
+        assert out == raw
+        assert len(calls) == 2 and "format" not in calls[1]["output_config"]
+        assert calls[1]["output_config"]["effort"] == "high"          # lo demás se mantiene
+    finally:
+        brain._SCHEMA_OFF.discard("decision")
+
+
+def test_output_schema_has_no_enums():
+    from clipmax.prompts import OUTPUT_SCHEMA
+
+    assert '"enum"' not in json.dumps(OUTPUT_SCHEMA)
+
+
 def test_haiku_params_have_no_thinking(cfg):
     assert brain._model_params(cfg, "claude-haiku-4-5") == {}
     assert brain._model_params(cfg, "claude-sonnet-5")["thinking"] == {"type": "adaptive"}

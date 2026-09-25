@@ -40,7 +40,8 @@ function renderLiveClips(el, clips) {
   el.innerHTML = clips.map(c => {
     if (c.estado === "procesando") return `<div class="card clip"><div class="small"><span class="badge procesando">editando</span> ${esc(c.nombre)} · ${c.hora}</div></div>`;
     if (c.estado === "error") return `<div class="card clip"><div class="small"><span class="badge error">error</span> ${esc(c.nombre)} · ${c.hora}</div><div class="small mut">${esc(c.nota)}</div></div>`;
-    if (c.estado === "descartado") return `<div class="card clip"><div class="small"><span class="badge sin_datos">descartado</span> ${esc(c.nombre)} · ${c.hora}</div><div class="small mut">${esc(c.nota)}</div></div>`;
+    if (c.estado === "descartado") return `<div class="card clip"><div class="small"><span class="badge sin_datos">descartado</span> ${esc(c.nombre)} · ${c.hora}</div><div class="small mut">${esc(c.nota)}</div>
+      <div class="row" style="margin-top:6px"><button class="sec small" onclick="publicarIgual(${c.id}, this)">Publicar igual</button></div></div>`;
     return `<div class="card clip${c.subido ? " subido" : ""}">
       ${c.thumb ? `<a href="${c.url}" target="_blank"><img src="${c.thumb}" alt=""></a>` : ""}
       <div><b>${esc(c.titulo)}</b></div>
@@ -54,6 +55,11 @@ function renderLiveClips(el, clips) {
   }).join("");
 }
 async function copiarCaption(id) { await copyText(clipText(LIVE_CLIPS[id])); toast("Caption copiado"); }
+async function publicarIgual(id, btn) {
+  btn.disabled = true;
+  try { await api(`/api/clips-vivo/${id}/publicar`, {}); toast("Armando el clip: aparece en 1-2 minutos"); }
+  catch (e) { toast(e.message); btn.disabled = false; }
+}
 async function marcarSubido(id, val) { try { await api(`/api/clips-vivo/${id}/subido`, { subido: val }); } catch (e) { toast(e.message); } }
 async function pedirClip(momentId) {
   try { await api("/api/clips-vivo/crear", { moment_id: momentId }); toast("Clip en cola: sale apenas ese momento termine de grabarse"); }

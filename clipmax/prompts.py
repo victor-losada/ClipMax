@@ -25,10 +25,12 @@ MASTER_PROMPT_PATH = PROJECT_ROOT / "prompts" / "prompt_maestro.md"
 
 # Esquema de salida (structured outputs). Todas las propiedades son obligatorias y
 # additionalProperties=false, como exige la API; los rangos se validan en brain.py.
+# Sin "enum": la API compila el esquema a una gramática con tamaño máximo y este esquema es grande.
+# Los valores permitidos los dice el prompt y brain.validate_decision normaliza cualquier otro.
 _GUION_ITEM = {
     "type": "object",
     "properties": {
-        "tipo": {"type": "string", "enum": ["narracion", "clip", "gancho"]},
+        "tipo": {"type": "string"},
         "texto": {"type": "string"},
         "candidato_id": {"type": "integer"},
         "inicio": {"type": "number"},
@@ -40,8 +42,7 @@ _GUION_ITEM = {
         "efecto_sonido": {"type": "string"},
         "pantalla_dividida_con": {"type": "integer"},
         # Estilo Eufonía (prompts/estilo_eufonia.md); en el clásico van vacíos salvo emociones/zoom_texto.
-        "bloque": {"type": "string", "enum": ["", "gancho", "premisa", "cuerpo", "subida", "pausa", "climax",
-                                              "desenlace", "cierre"]},
+        "bloque": {"type": "string"},
         "emociones": {"type": "array", "items": {
             "type": "object",
             "properties": {"t": {"type": "number"}, "tipo": {"type": "string"}, "texto": {"type": "string"}},
@@ -49,7 +50,7 @@ _GUION_ITEM = {
         "zoom_texto": {"type": "array", "items": {
             "type": "object",
             "properties": {"t": {"type": "number"},
-                           "zona": {"type": "string", "enum": ["chat", "juego", "centro", "arriba"]},
+                           "zona": {"type": "string"},
                            "texto": {"type": "string"}},
             "required": ["t", "zona", "texto"], "additionalProperties": False}},
         "facecam_completo": {"type": "array", "items": {
@@ -110,8 +111,7 @@ OUTPUT_SCHEMA = {
                     "texto_en_pantalla": {"type": "string"},
                     "momento_clave": {"type": "number"},
                     "narracion": {"type": "string"},
-                    "tipo_evento": {"type": "string", "enum": ["muerte", "explosion", "anuncio", "pique", "alianza",
-                                                               "traicion", "logro", "otro"]},
+                    "tipo_evento": {"type": "string"},
                     "contador": {"type": "string"},
                     "suma": {"type": "integer"},
                     "palabra_clave": {"type": "string"},
@@ -134,8 +134,7 @@ OUTPUT_SCHEMA = {
                 "properties": {
                     "id": {"type": "string"},
                     "etiqueta": {"type": "string"},
-                    "icono": {"type": "string", "enum": ["calavera", "corazon", "espada", "estrella", "diamante",
-                                                         "casa", "rayo", "trofeo"]},
+                    "icono": {"type": "string"},
                     "inicial": {"type": "integer"},
                 },
                 "required": ["id", "etiqueta", "icono", "inicial"],
@@ -185,10 +184,11 @@ CLIP_PROMPT_PATH = PROJECT_ROOT / "prompts" / "clip_vivo.md"
 CLIP_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["publicar", "motivo", "inicio", "fin", "momento_clave", "titulo", "caption", "hashtags",
-                 "efecto_sonido", "emociones", "zoom_texto"],
+    "required": ["publicar", "descarte", "motivo", "inicio", "fin", "momento_clave", "titulo", "caption",
+                 "hashtags", "efecto_sonido", "emociones", "zoom_texto"],
     "properties": {
         "publicar": {"type": "boolean"},
+        "descarte": {"type": "string"},      # "" | sin_contenido | tecnico | publicidad | poco_interes
         "motivo": {"type": "string"},
         "inicio": {"type": "number"},
         "fin": {"type": "number"},

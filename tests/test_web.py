@@ -55,3 +55,25 @@ def test_import_requires_exported_candidates(client, store, db):
 def test_files_route_blocks_traversal(client, store):
     fecha = today_str(store.get())
     assert client.get(f"/archivos/{fecha}/../../../etc/passwd").status_code in (403, 404)
+
+
+def test_publish_discarded_live_clip_after_the_session(client, db, monkeypatch):
+    import threading
+
+    from clipmax import liveclips
+
+    s = db.get_or_create_session("2026-09-25")
+    cid = db.add_live_clip(session_id=s["id"], slug="westcol", start_ts=100.0, end_ts=140.0, score=3.0,
+                           estado="descartado", nota="banter")
+    done = threading.Event()
+    seen = []
+
+    def fake_publish(self, clip_id):
+        seen.append((self.session["id"], clip_id))
+        done.set()
+    monkeypatch.setattr(liveclips.LiveClipper, "publish", fake_publish)
+    r = client.post(f"/api/clips-vivo/{cid}/publicar", json={})
+    assert r.get_json()["ok"] is True
+    assert done.wait(5) and seen == [(s["id"], cid)]
+    assert db.live_clip(cid)["estado"] == "procesando"
+    assert client.post("/api/clips-vivo/9999/publicar", json={}).status_code == 404

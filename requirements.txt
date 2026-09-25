@@ -11,4 +11,5 @@ python-dotenv>=1.0          # leer ANTHROPIC_API_KEY desde .env
 truststore>=0.10            # HTTPS con los certificados de Windows (evita CERTIFICATE_VERIFY_FAILED)
 certifi                     # raíces de Mozilla como respaldo
 pyttsx3>=2.90; sys_platform == "win32"   # narración opcional con voces SAPI de Windows
-piper-tts>=1.3.0             # narrador en off del resumen de TikTok (voz neural local)
+edge-tts>=7.0                # narrador del resumen de TikTok: voces neuronales de Microsoft (gratis)
+piper-tts>=1.3.0             # respaldo del narrador sin internet (voz local)

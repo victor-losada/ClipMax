@@ -173,7 +173,7 @@ Las narraciones son tarjetas con el fotograma del clip siguiente desenfocado, y 
 Tope por hora. El botón 🎬 del Panel encola un momento concreto y salta ese tope. `tools.background_priority()` baja la prioridad de whisper/ffmpeg en ese hilo, y un único candado de whisper evita dos transcripciones a la vez.
 
 **Resumen para TikTok** (`editor.render_tiktok_summary`). Si los hechos de `resumen_tiktok` traen narración y está la voz de Piper, lo arma `tiktok_recap.py` según la ficha vertical:
-- `narrator.py` sintetiza frase por frase, sin pausas de más de 0.3 s y con el tiempo de cada palabra;
+- `narrator.py` sintetiza con una voz neuronal de Microsoft (edge-tts, tiempos exactos por palabra) o, sin internet, con Piper; acorta las pausas largas y respeta las pronunciaciones de cada streamer sin tocar los subtítulos;
 - cada hecho es una pieza: cortes rápidos leídos con `-ss` por plano, clip 16:9 centrado sobre su versión desenfocada, contadores que cambian en la palabra clave, flash de color, ráfaga con cuadro de impacto y la cita con el plan del director (`style.direct`);
 - intro con revelado pixel y cierre con primerísimo plano y "sígueme".
 

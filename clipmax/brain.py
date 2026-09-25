@@ -132,6 +132,46 @@ def _stream_call(client, params: dict, use_fallback: bool):
         return stream.get_final_message()
 
 
+# Esquemas que la API rechazó en esta ejecución (p. ej. "compiled grammar is too large"): no se reintentan.
+_SCHEMA_OFF: set[str] = set()
+
+
+def _schema_rejected(exc) -> bool:
+    msg = str(getattr(exc, "message", "") or exc).lower()
+    return "grammar" in msg or "schema" in msg
+
+
+def _with_schema(key: str, params: dict, schema: dict, call):
+    """Pide salida estructurada con `schema`. Si la API rechaza el esquema (demasiado grande o
+    inválido), repite sin él: el prompt ya pide solo JSON y lo valida validate_decision."""
+    import anthropic
+
+    if key not in _SCHEMA_OFF:
+        params.setdefault("output_config", {})["format"] = {"type": "json_schema", "schema": schema}
+        try:
+            return call(params)
+        except anthropic.BadRequestError as exc:
+            if not _schema_rejected(exc):
+                raise
+            log.warning("La API rechazó el esquema de salida (%s); pido el JSON sin esquema", exc.message)
+            _SCHEMA_OFF.add(key)
+            params["output_config"].pop("format", None)
+            if not params["output_config"]:
+                params.pop("output_config")
+    return call(params)
+
+
+def _parse_json(text: str, what: str) -> dict:
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    try:
+        return extract_json(text)     # sin esquema la respuesta puede venir en un bloque ```json
+    except ClaudeError as exc:
+        raise ClaudeError(f"Claude no devolvió JSON válido ({what}): {text[:300]}") from exc
+
+
 def decide_api(cfg: dict, db: Database, session: dict, material: str) -> dict:
     """Pide a Claude la decisión editorial del día. Devuelve el dict crudo de Claude."""
     import anthropic
@@ -175,7 +215,6 @@ def decide_api(cfg: dict, db: Database, session: dict, material: str) -> dict:
         "messages": messages,
         **_model_params(cfg, model),
     }
-    params.setdefault("output_config", {})["format"] = {"type": "json_schema", "schema": OUTPUT_SCHEMA}
     (folder / "request.json").write_text(
         json.dumps({k: v for k, v in params.items() if k != "system"}, ensure_ascii=False, indent=1),
         encoding="utf-8")
@@ -183,7 +222,7 @@ def decide_api(cfg: dict, db: Database, session: dict, material: str) -> dict:
     use_fallback = bool(cfg["claude"]["fallback_por_rechazo"]) and model in FALLBACK_MODELS
     t0 = time.time()
     try:
-        msg = _stream_call(client, params, use_fallback)
+        msg = _with_schema("decision", params, OUTPUT_SCHEMA, lambda p: _stream_call(client, p, use_fallback))
     except anthropic.AuthenticationError as exc:
         raise ClaudeError("ANTHROPIC_API_KEY inválida o ausente (revisa el archivo .env)") from exc
     except anthropic.RateLimitError as exc:
@@ -214,11 +253,7 @@ def decide_api(cfg: dict, db: Database, session: dict, material: str) -> dict:
                           "Revisa el contexto de X pegado o usa el modo manual.")
     if msg.stop_reason == "max_tokens":
         raise ClaudeError("La respuesta se cortó por max_tokens; sube claude.max_tokens en la configuración")
-    text = _text_of(msg)
-    try:
-        return json.loads(text)
-    except ValueError as exc:
-        raise ClaudeError(f"Claude no devolvió JSON válido: {text[:300]}") from exc
+    return _parse_json(_text_of(msg), "decisión")
 
 
 @contextlib.contextmanager
@@ -267,10 +302,9 @@ def curate_live_clip(cfg: dict, db: Database, session: dict, material: str) -> d
               "messages": messages, **_model_params(cfg, model)}
     if "effort" in params.get("output_config", {}):
         params["output_config"]["effort"] = "low"   # tarea corta: no hace falta pensar mucho
-    params.setdefault("output_config", {})["format"] = {"type": "json_schema", "schema": CLIP_SCHEMA}
     t0 = time.time()
     with _api_errors():
-        msg = client.messages.create(**params)
+        msg = _with_schema("clip", params, CLIP_SCHEMA, lambda p: client.messages.create(**p))
     cost = cost_from_usage(cfg, model, msg.usage)
     db.add_claude_run(
         session_id=session["id"], tipo="clip_vivo", modelo=model,
@@ -284,11 +318,7 @@ def curate_live_clip(cfg: dict, db: Database, session: dict, material: str) -> d
         raise ClaudeError("Claude rechazó el clip")
     if msg.stop_reason == "max_tokens":
         raise ClaudeError("La respuesta del clip se cortó (max_tokens)")
-    text = _text_of(msg)
-    try:
-        return json.loads(text)
-    except ValueError as exc:
-        raise ClaudeError(f"Claude no devolvió JSON válido: {text[:200]}") from exc
+    return _parse_json(_text_of(msg), "clip")
 
 
 def research_x_web(cfg: dict, db: Database, session: dict) -> str:

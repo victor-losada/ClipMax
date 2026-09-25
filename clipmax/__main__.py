@@ -259,11 +259,22 @@ def cmd_doctor(args) -> None:
     if cfg["edicion"].get("resumen_tiktok") and cfg["edicion"].get("tiktok_narrado", True):
         from . import narrator
 
-        if narrator.available(cfg):
-            line(True, "Narrador TikTok (Piper)", str(narrator.voice_path(cfg)))
+        if not narrator.available(cfg):
+            line(None, "Narrador TikTok", "falta edge-tts (pip install -r requirements.txt). "
+                 "Sin narrador el resumen TikTok sale con texto en pantalla")
+        elif narrator.engine(cfg) == "edge" and not args.sin_red:
+            import tempfile
+            from pathlib import Path
+
+            try:
+                with tempfile.TemporaryDirectory() as tmp:
+                    narrator.narrate_edge(cfg, "Prueba.", Path(tmp, "prueba.wav"))
+                line(True, "Narrador TikTok", narrator.describe(cfg))
+            except Exception as exc:  # noqa: BLE001
+                line(None, "Narrador TikTok", f"la voz de Microsoft no respondió ({str(exc)[:80]})"
+                     + ("; se usará Piper" if narrator.piper_ready(cfg) else ""))
         else:
-            line(None, "Narrador TikTok (Piper)", f"falta la voz ({narrator.voice_path(cfg).name}) o piper-tts: "
-                 "python arrancar.py descargar --sin-whisper. Sin ella el resumen TikTok sale sin narrador")
+            line(True, "Narrador TikTok", narrator.describe(cfg))
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if cfg["claude"]["modo"] == "api":
         line(bool(key), "ANTHROPIC_API_KEY", "configurada" if key else "falta en .env (o usa claude.modo: manual)")

@@ -4,7 +4,7 @@ ClipMax graba a los streamers del **Desafío 4** a la hora del evento, detecta s
 
 El resumen se edita en estilo **"Eufonía"**: montaje coral con las voces al frente, gancho en frío, zoom a la cara en las emociones y al texto que las provocó, captions de frases clave y rótulos pixel ([docs/ESTILO_EDICION.md](docs/ESTILO_EDICION.md)).
 
-Mientras graba, además, arma **clips verticales para TikTok** que descargas desde el Panel. Al cierre deja un **resumen vertical para TikTok de máximo 4 minutos**, narrado en off con voz local (Piper), con contadores, flashes y citas de los streamers ([docs/CLIPS_TIKTOK.md](docs/CLIPS_TIKTOK.md)).
+Mientras graba, además, arma **clips verticales para TikTok** que descargas desde el Panel. Al cierre deja un **resumen vertical para TikTok de máximo 4 minutos**, narrado en off con voces neuronales de Microsoft (gratis), con contadores, flashes y citas de los streamers ([docs/CLIPS_TIKTOK.md](docs/CLIPS_TIKTOK.md)).
 
 Todo corre local y gratis (ffmpeg, yt-dlp, whisper.cpp, SQLite, Flask). Lo único que se paga es la API de Claude, con un tope mensual (por defecto $10), o puedes usar el **modo manual**, que genera un texto para pegar en claude.ai y no gasta API.
 
@@ -51,7 +51,7 @@ clipmax/
   editor.py        ffmpeg: silencios, encuadres, títulos, tarjetas, concat
   liveclips.py     clips verticales para TikTok mientras se graba (Claude Haiku o reglas)
   tiktok_recap.py  resumen TikTok narrado (ficha vertical: contadores, flashes, impacto, citas)
-  narrator.py      narrador en off con Piper (sin pausas, tiempos por palabra)
+  narrator.py      narrador en off: voces de Microsoft (edge-tts) o Piper; pausas cortas, tiempos por palabra
   style.py         director de efectos: emociones, textos que provocan reacciones, zooms y captions
   montage.py       montaje del resumen en estilo Eufonía (gancho, sting, bloques, pantalla final)
   diagnostic.py    diagnóstico de sincronía audio/video con las grabaciones reales

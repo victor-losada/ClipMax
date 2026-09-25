@@ -1,6 +1,7 @@
 """Resumen TikTok narrado (ficha vertical): planos, subtítulos, contadores, narrador y render."""
 
 import array
+import re
 import subprocess
 import sys
 import time
@@ -124,14 +125,50 @@ class _FakeVoice:
 
 
 @pytest.fixture
-def fake_piper(monkeypatch):
+def fake_piper(monkeypatch, cfg):
     mod = types.ModuleType("piper")
     mod.SynthesisConfig = lambda **kw: kw
     mod.PiperVoice = types.SimpleNamespace(load=lambda p: _FakeVoice())
     monkeypatch.setitem(sys.modules, "piper", mod)
+    cfg["edicion"]["narrador_motor"] = "piper"
     narrator._voice.cache_clear()
     yield
     narrator._voice.cache_clear()
+
+
+@pytest.fixture
+def fake_edge(monkeypatch, tmp_path):
+    """edge-tts simulado: 0.3 s por palabra dicha, 0.8 s de pausa tras cada punto y una frase de
+    audio real (MP3) con esos silencios; devuelve WordBoundary como el servicio."""
+    sent = {}
+
+    class Communicate:
+        def __init__(self, text, voice, *, rate="+0%", boundary="SentenceBoundary", proxy=None, **kw):
+            sent.update(text=text, voice=voice, rate=rate, boundary=boundary)
+            self.text = text
+
+        async def stream(self):
+            t, bounds, segs = 0.2, [], []
+            for m in re.finditer(r"\S+", self.text):
+                word = re.sub(r"[^\w]", "", m.group(0))
+                if word:
+                    bounds.append((t, 0.25, word))
+                    segs.append((t, t + 0.25))
+                t += 0.3 + (0.8 if m.group(0).endswith(".") else 0.0)
+            total = t + 0.6
+            expr = "+".join(f"between(t,{a:.2f},{b:.2f})" for a, b in segs) or "0"
+            mp3 = tmp_path / "fake_edge.mp3"
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                            f"sine=frequency=300:sample_rate=24000:duration={total:.2f}",
+                            "-af", f"volume='if({expr},1,0)':eval=frame", "-ac", "1", str(mp3)], check=True)
+            yield {"type": "audio", "data": mp3.read_bytes()}
+            for a, d, w in bounds:
+                yield {"type": "WordBoundary", "offset": int(a * 1e7), "duration": int(d * 1e7), "text": w}
+
+    mod = types.ModuleType("edge_tts")
+    mod.Communicate = Communicate
+    monkeypatch.setitem(sys.modules, "edge_tts", mod)
+    return sent
 
 
 def test_narrator_has_no_long_pauses_and_times_every_word(cfg, fake_piper, tmp_path):
@@ -154,6 +191,75 @@ def test_narrator_availability_needs_the_voice(cfg, fake_piper, tmp_path):
     assert not narrator.available(cfg)
     (tmp_path / "no.onnx").write_bytes(b"x")
     assert narrator.available(cfg)
+
+
+def test_pronunciation_maps_back_to_the_written_names(cfg):
+    for st in cfg["streamers"]:
+        if st["slug"] == "westcol":
+            st["pronunciacion"] = "Güéstcol"
+        if st["slug"] == "gearofnos":
+            st["pronunciacion"] = "Guír of Nos"
+    text = "Westcol y Gear of Nos: 3 muertes."
+    spoken, back = narrator._speakable_map(cfg, text)
+    assert spoken == "Güéstcol y Guír of Nos: 3 muertes."
+    bounds = [(0.0, 0.5, "Güéstcol"), (0.5, 0.6, "y"), (0.6, 0.8, "Guír"), (0.8, 0.9, "of"), (0.9, 1.2, "Nos"),
+              (1.3, 2.0, "3 muertes")]                                     # el servicio junta número y palabra
+    words = narrator.align_words(text, spoken, back, bounds)
+    assert [w for *_t, w in words] == ["Westcol", "y", "Gear", "of", "Nos:", "3", "muertes."]
+    # "Gear of Nos" se dijo en tres palabras que caen sobre las tres escritas.
+    assert words[0][:2] == (0.0, 0.5) and words[2][0] == 0.6 and words[4][1] == 1.2
+    # "3 muertes" se reparte por letras dentro del mismo tramo.
+    assert words[5][0] == 1.3 and words[5][1] < words[6][0] + 1e-6 and words[6][1] == 2.0
+
+
+def test_long_pauses_are_squeezed_and_times_follow():
+    rate = 1000
+    voice = array.array("h", [5000] * 500)
+    silence = array.array("h", [0] * 900)
+    samples = array.array("h", [0] * 200) + voice + silence + voice + array.array("h", [0] * 700)
+    out, cuts = narrator.squeeze_pauses(samples, rate)
+    # 0.2 s iniciales -> 0.02 s; 0.9 s de pausa -> 0.16 s; 0.7 s finales -> 0.06 s
+    assert len(out) / rate == pytest.approx(0.02 + 0.5 + narrator.PAUSA + 0.5 + 0.06, abs=0.02)
+    assert narrator.remap_time(0.2, cuts) == pytest.approx(0.02, abs=0.01)          # empieza la voz
+    assert narrator.remap_time(1.6, cuts) == pytest.approx(0.02 + 0.5 + narrator.PAUSA, abs=0.02)
+
+
+@pytest.mark.skipif(not has_ffmpeg(), reason="ffmpeg no instalado")
+def test_microsoft_voice_words_and_pauses(cfg, fake_edge, tmp_path):
+    for st in cfg["streamers"]:
+        if st["slug"] == "westcol":
+            st["pronunciacion"] = "Güéstcol"
+    cfg["edicion"]["narrador_voz"] = "es-CO-GonzaloNeural"
+    cfg["edicion"]["narrador_velocidad"] = 0.9
+    nar = narrator.narrate(cfg, "Westcol llegó tarde. Y murió.", tmp_path / "n.wav")
+    assert fake_edge == {"text": "Güéstcol llegó tarde. Y murió.", "voice": "es-CO-GonzaloNeural", "rate": "+11%",
+                         "boundary": "WordBoundary"}
+    assert [w for *_t, w in nar.words] == ["Westcol", "llegó", "tarde.", "Y", "murió."]
+    # La pausa de 0.8 s después de "tarde." queda en ~0.16 s y los tiempos se corren con ella.
+    gap = nar.words[3][0] - nar.words[2][1]
+    assert gap < 0.3
+    assert nar.words[0][0] == pytest.approx(0.02, abs=0.03)
+    assert nar.dur == pytest.approx(5 * 0.25 + 3 * 0.05 + narrator.PAUSA + 0.02 + 0.06 + 0.05, abs=0.2)
+    with wave.open(str(tmp_path / "n.wav")) as wf:
+        assert wf.getframerate() == narrator.EDGE_RATE
+
+
+def test_microsoft_voice_falls_back_to_piper(cfg, fake_piper, monkeypatch, tmp_path):
+    cfg["edicion"]["narrador_motor"] = "edge"
+    cfg["edicion"]["piper_voz"] = str(tmp_path / "v.onnx")
+    (tmp_path / "v.onnx").write_bytes(b"x")
+    mod = types.ModuleType("edge_tts")
+
+    class Broken:
+        def __init__(self, *a, **kw):
+            raise OSError("sin internet")
+    mod.Communicate = Broken
+    monkeypatch.setitem(sys.modules, "edge_tts", mod)
+    nar = narrator.narrate(cfg, "Hola a todos.", tmp_path / "n.wav")
+    assert [w for *_t, w in nar.words] == ["Hola", "a", "todos."]              # la hizo Piper
+    (tmp_path / "v.onnx").unlink()
+    with pytest.raises(RuntimeError, match="Microsoft"):
+        narrator.narrate(cfg, "Hola.", tmp_path / "n2.wav")
 
 
 @pytest.mark.skipif(not has_ffmpeg(), reason="ffmpeg no instalado")
